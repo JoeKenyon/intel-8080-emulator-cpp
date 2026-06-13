@@ -1,6 +1,12 @@
 #include <iostream>
 #include <fstream>
-#include <iomanip>
+#include <cstdio>
+#include <cstdint>
+
+/*
+print rom 
+xxd roms/tetris.gb | head -n 25
+*/
 
 int main() 
 {
@@ -16,7 +22,7 @@ int main()
 
     file.read(&byte, sizeof(char));
 
-    std::cout << byte << "\n";
+    std::printf("0x%02X\n", static_cast<uint8_t>(byte));
 
     file.close();
     return 0;
