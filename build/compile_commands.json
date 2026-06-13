@@ -1,8 +1,0 @@
-[
-{
-  "directory": "/Users/joekenyon/Desktop/gameboy-emulator/build",
-  "command": "/usr/bin/clang++   -g -std=gnu++17 -arch arm64 -o CMakeFiles/gb-header-parser.dir/main.cpp.o -c /Users/joekenyon/Desktop/gameboy-emulator/main.cpp",
-  "file": "/Users/joekenyon/Desktop/gameboy-emulator/main.cpp",
-  "output": "CMakeFiles/gb-header-parser.dir/main.cpp.o"
-}
-]

@@ -1,3 +1,0 @@
-/Users/joekenyon/Desktop/gameboy-emulator/build/CMakeFiles/gb-header-parser.dir
-/Users/joekenyon/Desktop/gameboy-emulator/build/CMakeFiles/edit_cache.dir
-/Users/joekenyon/Desktop/gameboy-emulator/build/CMakeFiles/rebuild_cache.dir
