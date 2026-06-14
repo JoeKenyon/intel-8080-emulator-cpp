@@ -6,3 +6,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Define the executable and its source files
 add_executable(gb-header-parser main.cpp)
+
+file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/roms" 
+     DESTINATION "${CMAKE_CURRENT_BINARY_DIR}"
+)

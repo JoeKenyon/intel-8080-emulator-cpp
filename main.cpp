@@ -11,7 +11,7 @@ xxd roms/tetris.gb | head -n 25
 int main() 
 {
     // open the ROM in binary mode
-    std::ifstream file("roms/tetris.gb", std::ios::binary);
+    std::ifstream file("./roms/tetris.gb", std::ios::binary);
     
     if (!file.is_open()) 
     {
