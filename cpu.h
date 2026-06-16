@@ -1,5 +1,9 @@
 #include <cstdint>
 #include <cstddef>
+#include <string>
+#include <fstream>
+
+
 
 class CPU
 {
@@ -8,13 +12,18 @@ public:
     CPU();
     ~CPU();
 
-private:
+    bool loadRom(const std::string& filename);
 
     const uint8_t* rom;
     uint8_t* vram;
     uint8_t* ram;
 
     static const size_t MEMORY_SIZE = 65536;
+    static const size_t ROM_SIZE = 8192;
+    static const size_t RAM_SIZE = 8192;
+    static const size_t VRAM_SIZE = 8192;
+    static const size_t OPCODE_NUM = 256;
+
 
     uint8_t memory[MEMORY_SIZE];
 
@@ -36,7 +45,6 @@ private:
         uint8_t Parity   : 1;
         uint8_t Carry    : 1;
         uint8_t AuxCarry : 1;
-    
     };
 
     uint16_t PC;
@@ -44,4 +52,13 @@ private:
 
     Flags flags;
     Registers regs;
+
+    struct Instruction 
+    {
+        const char* mnemonic;
+        uint8_t size;
+        uint8_t cycles;
+    };
+
+    static const Instruction OP_TABLE[OPCODE_NUM];
 };
