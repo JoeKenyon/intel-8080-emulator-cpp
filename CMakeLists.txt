@@ -10,6 +10,8 @@ add_executable(intel-8080-emulator-cpp ${CPP_FILES})
 
 target_include_directories(intel-8080-emulator-cpp PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
+target_compile_definitions(intel-8080-emulator-cpp PRIVATE ROM_DIR="${CMAKE_CURRENT_SOURCE_DIR}/roms")
+
 file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/roms" 
      DESTINATION "${CMAKE_CURRENT_BINARY_DIR}"
 )

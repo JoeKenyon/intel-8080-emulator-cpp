@@ -1,24 +1,15 @@
-#include <iostream>
-#include <fstream>
-#include <cstdio>
-#include <cstdint>
 #include "cpu.h"
-
-
+#include <iostream>
 
 int main() 
 {
     CPU cpu;
 
-    // load the rom
-
-    cpu.loadRom("roms/space-invaders.bin");
-
-    uint8_t opcode = cpu.memory[cpu.PC];
-    cpu.PC += cpu.OP_TABLE[opcode].size;
-
-
-
+    // 1. Load the CP/M test binary at address 0x0100
+    if (!cpu.loadRom("roms/8080PRE.COM", 0x0100)) 
+    {
+        return 1;
+    }
 
     return 0;
 }

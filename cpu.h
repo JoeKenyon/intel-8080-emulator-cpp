@@ -2,8 +2,7 @@
 #include <cstddef>
 #include <string>
 #include <fstream>
-
-
+#include <iostream>
 
 class CPU
 {
@@ -12,7 +11,7 @@ public:
     CPU();
     ~CPU();
 
-    bool loadRom(const std::string& filename);
+    bool loadRom(const std::string& filename, uint16_t startAddress = 0x0000);
 
     const uint8_t* rom;
     uint8_t* vram;

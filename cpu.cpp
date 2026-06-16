@@ -26,19 +26,30 @@ CPU::~CPU()
 
 }
 
-bool CPU::loadRom(const std::string& filename)
+bool CPU::loadRom(const std::string& filename, uint16_t startAddress)
 {
     // load the ifle in binary mode
-    std::ifstream file(filename, std::ios::binary);
+    std::ifstream file(filename, std::ios::binary | std::ios::ate);
 
     if (!file)
     {
+        std::cerr << "Error: Could not open file " << filename << "\n";
         return false;
     }
 
-    // read into rom
-    if (!file.read(reinterpret_cast<char*>(memory), ROM_SIZE)) 
-    {
+    // get filesize to validate it
+    std::streamsize fileSize = file.tellg();
+    file.seekg(0, std::ios::beg);
+
+    if (startAddress + fileSize > MEMORY_SIZE)
+     {
+        std::cerr << "Error: ROM file is too large for the remaining memory space.\n";
+        return false;
+    }
+
+    // read into rom at specified address... for using testing roms
+    if (!file.read(reinterpret_cast<char*>(&memory[startAddress]), fileSize)) {
+        std::cerr << "Error: Failed to read file data.\n";
         return false;
     }
 
