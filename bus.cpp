@@ -50,12 +50,18 @@ void Bus::write8(uint16_t addr, uint8_t value)
 
 uint16_t Bus::read16(uint16_t addr) const
 {
-    return static_cast<uint16_t>(memory[addr]) |
-           (static_cast<uint16_t>(memory[(uint16_t)(addr + 1)]) << 8);
+    uint16_t next = addr + 1;   // wraps 0xFFFF -> 0x0000, this truncation matters
+ 
+    uint8_t lo = memory[addr];
+    uint8_t hi = memory[next];
+ 
+    return lo | (hi << 8);
 }
 
 void Bus::write16(uint16_t addr, uint16_t value)
 {
-    memory[addr] = value & 0xFF;
-    memory[(uint16_t)(addr + 1)] = (value >> 8) & 0xFF;
+    uint16_t next = addr + 1;
+ 
+    memory[addr] = value;        // low byte, truncates on assignment
+    memory[next] = value >> 8;   // high byte
 }

@@ -53,8 +53,8 @@ const std::array<CPU::OpHandler, OPCODE_NUM> CPU::dispatch = CPU::buildDispatchT
 void CPU::op_unimplemented(uint8_t opcode, uint8_t /*op1*/, uint8_t /*op2*/)
 {
     std::cerr << "Unimplemented opcode: 0x" << std::hex << static_cast<int>(opcode)
-               << " (" << OpcodeTable[opcode].mnemonic << ") at PC=0x"
-               << (PC - OpcodeTable[opcode].size) << std::dec << "\n";
+              << " (" << OpcodeTable[opcode].mnemonic << ") at PC=0x"
+              << (PC - OpcodeTable[opcode].size) << std::dec << "\n";
 }
 
 void CPU::op_nop(uint8_t, uint8_t, uint8_t)
@@ -80,6 +80,6 @@ void CPU::op_lxi_b(uint8_t, uint8_t op1, uint8_t op2)
 
 void CPU::op_stax_b(uint8_t, uint8_t, uint8_t)
 {
-    uint16_t addr = (static_cast<uint16_t>(regs.B) << 8) | regs.C;
+    uint16_t addr = (regs.B << 8) | regs.C;
     bus.write8(addr, regs.A);
 }
