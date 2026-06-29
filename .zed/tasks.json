@@ -1,0 +1,8 @@
+[
+  {
+    "label": "CMake: Auto Build & Run",
+    "command": "cmake -B build -S . && cmake --build build && EXE=$(find ./build -maxdepth 2 -type f -perm +111 ! -name \"*.*\" | head -n 1); if [ -n \"$EXE\" ]; then $EXE; else echo \"No executable found\"; fi",
+    "allow_concurrent_runs": true,
+    "use_new_terminal": false,
+  },
+]
