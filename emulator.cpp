@@ -41,14 +41,14 @@ bool step()
     uint8_t op2 = memory[PC + 2];
 
     std::cout << "[ "
-              << std::left << std::setw(10) << std::setfill(' ') << DISSAMBLER_STATES[opcode]
+              << std::left << std::setw(10) << std::setfill(' ') << MNEMONICS[opcode]
               << " ] 0x"
               << std::hex << std::setw(2) << std::setfill('0') << (int)opcode
               << "\n";
 
     switch (opcode)
     {
-        case OP_NOP: PC += OPCODE_CYCLES[opcode]; break;
+        case OP_NOP: PC += 1; break;
         case OP_LXI_SP: op_LXI_SP(op1, op2); break;
         case OP_ANI: op_ANI(op1); break;
 
