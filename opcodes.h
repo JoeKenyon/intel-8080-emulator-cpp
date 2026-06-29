@@ -47,11 +47,13 @@ inline bool __calculateAuxCarrySub(uint8_t a, uint8_t b)
     return ((a & 0x0F) < (b & 0x0F));
 }
 
+// move
 void op_LXI_SP(uint8_t op1, uint8_t op2);
 void op_LXI_Reg(uint8_t& regHigh, uint8_t& regLow, uint8_t op1, uint8_t op2);
 void op_MOV(uint8_t& dest, uint8_t src);
 void op_MVI(uint8_t& dest, uint8_t op1);
 
+// arithmatical
 void op_ADI(uint8_t op1);
 void op_ADD(uint8_t src);
 void op_SUI(uint8_t op1);
@@ -59,11 +61,19 @@ void op_SUB(uint8_t src);
 void op_INR(uint8_t& reg);
 void op_DCR(uint8_t& reg);
 
+// logical
 void op_ANI(uint8_t op1);
 void op_ANA(uint8_t src);
 void op_XRA(uint8_t src);
 void op_ORA(uint8_t src);
 
+// branch
 void op_JMP(uint8_t op1, uint8_t op2);
 void op_JC(uint8_t op1, uint8_t op2);
 void op_JNC(uint8_t op1, uint8_t op2);
+void op_JNZ(uint8_t op1, uint8_t op2);
+void op_JZ(uint8_t op1, uint8_t op2);
+void op_JPE(uint8_t op1, uint8_t op2);
+void op_JPO(uint8_t op1, uint8_t op2);
+void op_JM(uint8_t op1, uint8_t op2);
+void op_JP(uint8_t op1, uint8_t op2);

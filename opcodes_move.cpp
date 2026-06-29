@@ -3,7 +3,8 @@
 
 void op_LXI_SP(uint8_t op1, uint8_t op2)
 {
-    SP = (op2 << 8) | op1;
+    uint16_t immediateValue = (op2 << 8) | op1;
+    SP = immediateValue;
     PC += 3;
 }
 

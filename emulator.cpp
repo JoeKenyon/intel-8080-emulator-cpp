@@ -45,49 +45,25 @@ bool step()
               << " ] 0x"
               << std::hex << std::setw(2) << std::setfill('0') << (int)opcode
               << "\n";
+
     switch (opcode)
     {
-        case OP_NOP: // NOP (No Operation)
-        {
-            PC += OPCODE_CYCLES[opcode]; // It's a 1-byte instruction, just move past it
-            break;
-        }
+        case OP_NOP: PC += OPCODE_CYCLES[opcode]; break;
+        case OP_LXI_SP: op_LXI_SP(op1, op2); break;
+        case OP_ANI: op_ANI(op1); break;
 
-        case OP_JMP: // Unconditional JMP
-        {
-            // Intel 8080 is little-endian: low-byte (op1) then high-byte (op2)
-            uint16_t targetAddress = (op2 << 8) | op1;
+        // jumping
+        case OP_JMP: op_JMP(op1, op2); break;
+        case OP_JC : op_JC (op1, op2); break;
+        case OP_JNC: op_JNC(op1, op2); break;
+        case OP_JZ : op_JZ (op1, op2); break;
+        case OP_JNZ: op_JNZ(op1, op2); break;
+        case OP_JPE: op_JPE(op1, op2); break;
+        case OP_JPO: op_JPO(op1, op2); break;
+        case OP_JM : op_JM (op1, op2); break;
+        case OP_JP : op_JP (op1, op2); break;
 
-            PC = targetAddress; // move the PC to point to where to jump to
-            break;
-        }
-
-        case OP_LXI_SP: //LXI SP,d16
-        {
-            uint16_t immediateValue = (op2 << 8) | op1;
-            SP = immediateValue;
-            PC += OPCODE_CYCLES[opcode];
-            break;
-        }
-
-        case OP_ANI: //ANI d8 bit wise and immediant value
-        {
-            regs.A = regs.A & op1; // use op1
-
-            // update flags based on register value
-            flags.Zero     = __calculateZero(regs.A);
-            flags.Sign     = __calculateSign(regs.A);
-            flags.Carry    = 0;
-            flags.Parity   = __calculateParity(regs.A);
-            flags.AuxCarry = __calculateAuxCarryANI(op1);
-
-            PC += OPCODE_CYCLES[opcode];
-            break;
-        }
-
-        default:
-            std::cerr << "Unimplemented opcode: 0x"<< std::hex << (int)opcode << " at PC=0x" << PC << "\n";
-            return false;
+        default: std::cerr << "Unimplemented opcode: 0x"<< std::hex << (int)opcode << " at PC=0x" << PC << "\n"; return false;
     }
 
     return true;
