@@ -66,6 +66,7 @@ void op_ANI(uint8_t op1);
 void op_ANA(uint8_t src);
 void op_XRA(uint8_t src);
 void op_ORA(uint8_t src);
+void op_CMP(uint8_t src);
 
 // branch
 void op_JMP(uint8_t op1, uint8_t op2);

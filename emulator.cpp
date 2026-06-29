@@ -104,6 +104,15 @@ bool step()
         case OP_DCR_L: op_DCR(regs.L); break;
         case OP_DCR_M: op_DCR(memory[(regs.H << 8) | regs.L]); break;
 
+        case OP_CMP_A: op_CMP(regs.A); break;
+        case OP_CMP_B: op_CMP(regs.B); break;
+        case OP_CMP_C: op_CMP(regs.C); break;
+        case OP_CMP_D: op_CMP(regs.D); break;
+        case OP_CMP_E: op_CMP(regs.E); break;
+        case OP_CMP_H: op_CMP(regs.H); break;
+        case OP_CMP_L: op_CMP(regs.L); break;
+        case OP_CMP_M: op_CMP(memory[(regs.H << 8) | regs.L]); break;
+
         default: std::cerr << "Unimplemented opcode: 0x"<< std::hex << (int)opcode << " at PC=0x" << PC << "\n"; return false;
     }
 
