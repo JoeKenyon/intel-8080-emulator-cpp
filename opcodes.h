@@ -1,4 +1,5 @@
 #pragma once
+#include "hardware.h"
 #include <cstdint>
 
 // set zero flag if result is 0 lol
@@ -47,34 +48,96 @@ inline bool __calculateAuxCarrySub(uint8_t a, uint8_t b)
     return ((a & 0x0F) < (b & 0x0F));
 }
 
-// move
-void op_LXI_SP(uint8_t op1, uint8_t op2);
-void op_LXI_Reg(uint8_t& regHigh, uint8_t& regLow, uint8_t op1, uint8_t op2);
+// --- data movement ---
 void op_MOV(uint8_t& dest, uint8_t src);
 void op_MVI(uint8_t& dest, uint8_t op1);
+void op_STA(uint8_t op1, uint8_t op2);
+void op_LDA(uint8_t op1, uint8_t op2);
+void op_STAX(uint8_t hi, uint8_t lo);
+void op_LDAX(uint8_t hi, uint8_t lo);
+void op_LXI_SP(uint8_t op1, uint8_t op2);
+void op_LXI_Reg(uint8_t& regHigh, uint8_t& regLow, uint8_t op1, uint8_t op2);
+void op_SHLD(uint8_t op1, uint8_t op2);
+void op_LHLD(uint8_t op1, uint8_t op2);
 
-// arithmatical
-void op_ADI(uint8_t op1);
+// --- arithmetic ---
 void op_ADD(uint8_t src);
-void op_SUI(uint8_t op1);
+void op_ADI(uint8_t op1);
+void op_ADC(uint8_t src);
+void op_ACI(uint8_t op1);
 void op_SUB(uint8_t src);
+void op_SUI(uint8_t op1);
+void op_SBB(uint8_t src);
+void op_SBI(uint8_t op1);
 void op_INR(uint8_t& reg);
 void op_DCR(uint8_t& reg);
+void op_INX(uint16_t& regPair);
+void op_DCX(uint16_t& regPair);
+void op_DAD(uint16_t val);
 
-// logical
-void op_ANI(uint8_t op1);
+// --- logical ---
 void op_ANA(uint8_t src);
+void op_ANI(uint8_t op1);
 void op_XRA(uint8_t src);
+void op_XRI(uint8_t op1);
 void op_ORA(uint8_t src);
+void op_ORI(uint8_t op1);
 void op_CMP(uint8_t src);
+void op_CPI(uint8_t op1);
+void op_RLC();
+void op_RRC();
+void op_RAL();
+void op_RAR();
+void op_CMA();
+void op_STC();
+void op_CMC();
+void op_DAA();
 
-// branch
+// --- program flow / branches ---
 void op_JMP(uint8_t op1, uint8_t op2);
 void op_JC(uint8_t op1, uint8_t op2);
 void op_JNC(uint8_t op1, uint8_t op2);
-void op_JNZ(uint8_t op1, uint8_t op2);
 void op_JZ(uint8_t op1, uint8_t op2);
-void op_JPE(uint8_t op1, uint8_t op2);
-void op_JPO(uint8_t op1, uint8_t op2);
+void op_JNZ(uint8_t op1, uint8_t op2);
 void op_JM(uint8_t op1, uint8_t op2);
 void op_JP(uint8_t op1, uint8_t op2);
+void op_JPE(uint8_t op1, uint8_t op2);
+void op_JPO(uint8_t op1, uint8_t op2);
+void op_CALL(uint8_t op1, uint8_t op2);
+void op_C(uint8_t op1, uint8_t op2);
+void op_CC(uint8_t op1, uint8_t op2);
+void op_CNC(uint8_t op1, uint8_t op2);
+void op_CZ(uint8_t op1, uint8_t op2);
+void op_CNZ(uint8_t op1, uint8_t op2);
+void op_CM(uint8_t op1, uint8_t op2);
+void op_CP(uint8_t op1, uint8_t op2);
+void op_CPE(uint8_t op1, uint8_t op2);
+void op_CPO(uint8_t op1, uint8_t op2);
+void op_RET();
+void op_RC();
+void op_RNC();
+void op_RZ();
+void op_RNZ();
+void op_RM();
+void op_RP();
+void op_RPE();
+void op_RPO();
+void op_RST(uint8_t vector);
+
+// --- stack / address transfers ---
+void op_PUSH(uint8_t hi, uint8_t lo);
+void op_PUSH_PSW();
+void op_POP(uint8_t& hi, uint8_t& lo);
+void op_POP_PSW();
+void op_XCHG();
+void op_XTHL();
+void op_PCHL();
+void op_SPHL();
+
+// --- system execution & io ---
+void op_HLT();
+void op_EI();
+void op_DI();
+void op_NOP();
+void op_OUT(uint8_t port);
+void op_IN(uint8_t port);

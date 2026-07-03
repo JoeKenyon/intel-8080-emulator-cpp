@@ -4,7 +4,7 @@
 int main()
 {
     // load test rom
-    if (!loadRom("roms/cpudiag.bin", 0x0100)) {
+    if (!loadRom("roms/8080PRE.COM", 0x0100)) {
         return 1;
     }
 

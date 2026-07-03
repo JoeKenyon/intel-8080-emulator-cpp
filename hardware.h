@@ -18,10 +18,19 @@ struct Flags
     uint8_t AuxCarry;
 };
 
+struct InterruptState
+{
+    bool enabled; // INTE flip-flop - set by EI, cleared by DI or accepted interrupt
+    bool halted;  // CPU stopped by HLT, resumes on interrupt
+    bool pending; // set externally when an interrupt is asserted
+    uint8_t vector; // RST vector byte to execute on next step
+};
+
 inline uint16_t PC = 0x0000;
 inline uint16_t SP = 0x0000;
 inline Registers regs = {};
 inline Flags flags = {};
+inline InterruptState interrupts = {};
 
 static const char* MNEMONICS[] =
 {
