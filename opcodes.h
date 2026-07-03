@@ -30,6 +30,11 @@ inline bool __calculateAuxCarryANI(uint8_t op1)
     return (op1 & 0x08) != 0;
 }
 
+inline bool __calculateAuxCarryANI(uint8_t a, uint8_t op1)
+{
+    return ((a | op1) & 0x08) != 0;
+}
+
 // For ANA r: Logical OR of bit 3 from both registers
 inline bool __calculateAuxCarryANA(uint8_t a, uint8_t b)
 {
@@ -42,10 +47,20 @@ inline bool __calculateAuxCarryAdd(uint8_t a, uint8_t b)
     return (((a & 0x0F) + (b & 0x0F)) > 0x0F);
 }
 
-// returns true if subtraction borrows into bit 3 (lower nibble underflow)
+// For SUB, SUI, CMP, CPI, DCR
 inline bool __calculateAuxCarrySub(uint8_t a, uint8_t b)
 {
-    return ((a & 0x0F) < (b & 0x0F));
+    // 8080 ALU calculates A - B as: A + (~B) + 1
+    // AC is the carry out of bit 3 of this addition.
+    return (((a & 0x0F) + (~b & 0x0F) + 1) > 0x0F);
+}
+
+// For SBB, SBI
+inline bool __calculateAuxCarrySBB(uint8_t a, uint8_t b, bool carryFlag)
+{
+    // A - B - CY is calculated as A + (~B) + (carryFlag ? 0 : 1)
+    uint8_t twosCompCarry = carryFlag ? 0 : 1;
+    return (((a & 0x0F) + (~b & 0x0F) + twosCompCarry) > 0x0F);
 }
 
 // --- data movement ---

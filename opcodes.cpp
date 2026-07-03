@@ -1,4 +1,5 @@
 #include "opcodes.h"
+#include <iostream>
 
 // move src value into destination, from reg
 void op_MOV(uint8_t& dest, uint8_t src)
@@ -76,121 +77,6 @@ void op_LHLD(uint8_t op1, uint8_t op2)
     regs.L = memory[addr];
     regs.H = memory[addr + 1];
     PC += 3;
-}
-
-
-void op_ADD(uint8_t src)
-{
-    flags.AuxCarry = __calculateAuxCarryAdd(regs.A, src);
-    uint16_t result = (uint16_t)regs.A + src;
-    flags.Carry = (result > 0xFF);
-    regs.A = (uint8_t)result;
-
-    flags.Zero   = __calculateZero(regs.A);
-    flags.Sign   = __calculateSign(regs.A);
-    flags.Parity = __calculateParity(regs.A);
-
-    PC += 1;
-}
-
-void op_ADI(uint8_t op1)
-{
-    flags.AuxCarry = __calculateAuxCarryAdd(regs.A, op1);
-    uint16_t result = (uint16_t)regs.A + op1;
-    flags.Carry = (result > 0xFF);
-    regs.A = (uint8_t)result;
-
-    flags.Zero   = __calculateZero(regs.A);
-    flags.Sign   = __calculateSign(regs.A);
-    flags.Parity = __calculateParity(regs.A);
-
-    PC += 2;
-}
-
-void op_ADC(uint8_t src)
-{
-    // add with carry - identical to ADD but includes the incoming carry bit
-    uint8_t carryIn = flags.Carry ? 1 : 0;
-    flags.AuxCarry = (((regs.A & 0x0F) + (src & 0x0F) + carryIn) > 0x0F);
-    uint16_t result = (uint16_t)regs.A + src + carryIn;
-    flags.Carry = (result > 0xFF);
-    regs.A = (uint8_t)result;
-
-    flags.Zero   = __calculateZero(regs.A);
-    flags.Sign   = __calculateSign(regs.A);
-    flags.Parity = __calculateParity(regs.A);
-
-    PC += 1;
-}
-
-void op_ACI(uint8_t op1)
-{
-    uint8_t carryIn = flags.Carry ? 1 : 0;
-    flags.AuxCarry = (((regs.A & 0x0F) + (op1 & 0x0F) + carryIn) > 0x0F);
-    uint16_t result = (uint16_t)regs.A + op1 + carryIn;
-    flags.Carry = (result > 0xFF);
-    regs.A = (uint8_t)result;
-
-    flags.Zero   = __calculateZero(regs.A);
-    flags.Sign   = __calculateSign(regs.A);
-    flags.Parity = __calculateParity(regs.A);
-
-    PC += 2;
-}
-
-void op_SUB(uint8_t src)
-{
-    flags.AuxCarry = __calculateAuxCarrySub(regs.A, src);
-    flags.Carry = (regs.A < src);
-    regs.A = regs.A - src;
-
-    flags.Zero   = __calculateZero(regs.A);
-    flags.Sign   = __calculateSign(regs.A);
-    flags.Parity = __calculateParity(regs.A);
-
-    PC += 1;
-}
-
-void op_SUI(uint8_t op1)
-{
-    flags.AuxCarry = __calculateAuxCarrySub(regs.A, op1);
-    flags.Carry = (regs.A < op1);
-    regs.A = regs.A - op1;
-
-    flags.Zero   = __calculateZero(regs.A);
-    flags.Sign   = __calculateSign(regs.A);
-    flags.Parity = __calculateParity(regs.A);
-
-    PC += 2;
-}
-
-void op_SBB(uint8_t src)
-{
-    // subtract with borrow - like SUB but subtracts the incoming carry bit too
-    uint8_t borrowIn = flags.Carry ? 1 : 0;
-    flags.AuxCarry = ((regs.A & 0x0F) < ((src & 0x0F) + borrowIn));
-    flags.Carry = ((int)regs.A < ((int)src + borrowIn));
-    regs.A = regs.A - src - borrowIn;
-
-    flags.Zero   = __calculateZero(regs.A);
-    flags.Sign   = __calculateSign(regs.A);
-    flags.Parity = __calculateParity(regs.A);
-
-    PC += 1;
-}
-
-void op_SBI(uint8_t op1)
-{
-    uint8_t borrowIn = flags.Carry ? 1 : 0;
-    flags.AuxCarry = ((regs.A & 0x0F) < ((op1 & 0x0F) + borrowIn));
-    flags.Carry = ((int)regs.A < ((int)op1 + borrowIn));
-    regs.A = regs.A - op1 - borrowIn;
-
-    flags.Zero   = __calculateZero(regs.A);
-    flags.Sign   = __calculateSign(regs.A);
-    flags.Parity = __calculateParity(regs.A);
-
-    PC += 2;
 }
 
 void op_INR(uint8_t& reg)
@@ -393,163 +279,6 @@ void op_JP(uint8_t op1, uint8_t op2)
     }
 }
 
-// call subroutine if carry flag is set
-void op_CC(uint8_t op1, uint8_t op2)
-{
-    // check if the condition is met
-    bool conditionMet = flags.Carry;
-
-    if (conditionMet)
-    {
-        // calculate where to go back to after the call finishes
-        uint16_t instructionLength = 3;
-        uint16_t returnAddress = PC + instructionLength;
-
-        // isolate the high byte and low byte of the return address
-        uint8_t highByte = (returnAddress >> 8) & 0xFF;
-        uint8_t lowByte = returnAddress & 0xFF;
-
-        // push the address bytes onto the stack memory
-        uint16_t highByteStackAddress = SP - 1;
-        uint16_t lowByteStackAddress = SP - 2;
-        memory[highByteStackAddress] = highByte;
-        memory[lowByteStackAddress] = lowByte;
-
-        // move the stack pointer down by two bytes
-        SP = SP - 2;
-
-        // merge the target bytes into a 16bit destination address
-        uint16_t targetAddress = (op2 << 8) | op1;
-
-        // jump to the destination subroutine
-        PC = targetAddress;
-    }
-    else
-    {
-        // skip the instruction if the condition fails
-        uint16_t instructionLength = 3;
-        PC = PC + instructionLength;
-    }
-}
-
-// call subroutine if parity odd flag condition is met
-void op_CPO(uint8_t op1, uint8_t op2)
-{
-    // check if the parity flag is zero which means parity is odd
-    bool conditionMet = (flags.Parity == 0);
-
-    if (conditionMet)
-    {
-        // calculate where to go back to after the call finishes
-        uint16_t instructionLength = 3;
-        uint16_t returnAddress = PC + instructionLength;
-
-        // isolate the high byte and low byte of the return address
-        uint8_t highByte = (returnAddress >> 8) & 0xFF;
-        uint8_t lowByte = returnAddress & 0xFF;
-
-        // push the address bytes onto the stack memory
-        uint16_t highByteStackAddress = SP - 1;
-        uint16_t lowByteStackAddress = SP - 2;
-        memory[highByteStackAddress] = highByte;
-        memory[lowByteStackAddress] = lowByte;
-
-        // move the stack pointer down by two bytes
-        SP = SP - 2;
-
-        // merge the target bytes into a 16bit destination address
-        uint16_t targetAddress = (op2 << 8) | op1;
-
-        // jump to the destination subroutine
-        PC = targetAddress;
-    }
-    else
-    {
-        // skip the instruction if the condition fails
-        uint16_t instructionLength = 3;
-        PC = PC + instructionLength;
-    }
-}
-
-// call subroutine if sign flag is set which means minus result
-void op_CM(uint8_t op1, uint8_t op2)
-{
-    // check if the sign flag is one which means minus
-    bool conditionMet = (flags.Sign == 1);
-
-    if (conditionMet)
-    {
-        // calculate where to go back to after the call finishes
-        uint16_t instructionLength = 3;
-        uint16_t returnAddress = PC + instructionLength;
-
-        // isolate the high byte and low byte of the return address
-        uint8_t highByte = (returnAddress >> 8) & 0xFF;
-        uint8_t lowByte = returnAddress & 0xFF;
-
-        // push the address bytes onto the stack memory
-        uint16_t highByteStackAddress = SP - 1;
-        uint16_t lowByteStackAddress = SP - 2;
-        memory[highByteStackAddress] = highByte;
-        memory[lowByteStackAddress] = lowByte;
-
-        // move the stack pointer down by two bytes
-        SP = SP - 2;
-
-        // merge the target bytes into a 16bit destination address
-        uint16_t targetAddress = (op2 << 8) | op1;
-
-        // jump to the destination subroutine
-        PC = targetAddress;
-    }
-    else
-    {
-        // skip the instruction if the condition fails
-        uint16_t instructionLength = 3;
-        PC = PC + instructionLength;
-    }
-}
-
-// call subroutine if sign flag is clear which means plus result
-void op_CP(uint8_t op1, uint8_t op2)
-{
-    // check if the sign flag is zero which means plus/positive
-    bool conditionMet = (flags.Sign == 0);
-
-    if (conditionMet)
-    {
-        // calculate where to go back to after the call finishes
-        uint16_t instructionLength = 3;
-        uint16_t returnAddress = PC + instructionLength;
-
-        // isolate the high byte and low byte of the return address
-        uint8_t highByte = (returnAddress >> 8) & 0xFF;
-        uint8_t lowByte = returnAddress & 0xFF;
-
-        // push the address bytes onto the stack memory
-        uint16_t highByteStackAddress = SP - 1;
-        uint16_t lowByteStackAddress = SP - 2;
-        memory[highByteStackAddress] = highByte;
-        memory[lowByteStackAddress] = lowByte;
-
-        // move the stack pointer down by two bytes
-        SP = SP - 2;
-
-        // merge the target bytes into a 16bit destination address
-        uint16_t targetAddress = (op2 << 8) | op1;
-
-        // jump to the destination subroutine
-        PC = targetAddress;
-    }
-    else
-    {
-        // skip the instruction if the condition fails
-        uint16_t instructionLength = 3;
-        PC = PC + instructionLength;
-    }
-}
-
-
 void op_RLC()
 {
     // rotate A left, bit 7 goes to CY and wraps to bit 0
@@ -651,10 +380,29 @@ void op_SPHL()
 
 void op_OUT(uint8_t port)
 {
-    // write A to output port - Space Invaders handles this via a port callback
-    // for now just advance PC; wire up IO later
-    (void)port;
-    PC += 2;
+    if (port == 0)
+    {
+        exit(0);// or set a loop break flag here
+    }
+    else if (port == 1)
+    {
+        uint8_t operation = regs.C;
+
+        if (operation == 2) {
+            // Print character in E
+            std::cout << (char)regs.E;
+        }
+        else if (operation == 9) {
+            // Print string from memory at DE until '$'
+            uint16_t addr = ((uint16_t)regs.D << 8) | regs.E;
+            while (memory[addr] != '$') {
+                std::cout << (char)memory[addr];
+                addr++;
+            }
+        }
+    }
+
+    PC += 2; // OUT is a 2-byte instruction
 }
 
 void op_IN(uint8_t port)
@@ -688,134 +436,85 @@ void op_HLT()
 
 void op_ANI(uint8_t op1)
 {
-    regs.A = regs.A & op1; // use op1
+    // 1. Calculate the AuxCarry based on the original Accumulator and immediate byte
+    flags.AuxCarry = __calculateAuxCarryANI(regs.A, op1);
 
-    // update flags based on register value
-    flags.Zero     = __calculateZero(regs.A);
-    flags.Sign     = __calculateSign(regs.A);
-    flags.Carry    = 0;
-    flags.Parity   = __calculateParity(regs.A);
-    flags.AuxCarry = __calculateAuxCarryANI(op1);
+    // 2. Perform the actual bitwise AND operation
+    regs.A = regs.A & op1;
+
+    // 3. Update the remaining status flags based on the new register value
+    flags.Zero   = __calculateZero(regs.A);
+    flags.Sign   = __calculateSign(regs.A);
+    flags.Carry  = 0; // ANI always clears CY
+    flags.Parity = __calculateParity(regs.A);
 
     PC += 2;
 }
 
 void op_ANA(uint8_t src)
 {
-    // AC = OR of bit 3 from both operands, calculated before A changes
-    flags.AuxCarry = __calculateAuxCarryANA(regs.A, src);
+    // 8080 ANA hardware quirk: AC is the logical OR of bit 3
+    flags.AuxCarry = ((regs.A | src) & 0x08) != 0;
+    flags.Carry    = 0;
 
     regs.A = regs.A & src;
-
-    // 8080 rule: ANA always clears CY
-    flags.Carry  = 0;
     flags.Zero   = __calculateZero(regs.A);
     flags.Sign   = __calculateSign(regs.A);
     flags.Parity = __calculateParity(regs.A);
-
     PC += 1;
 }
 
 void op_XRA(uint8_t src)
 {
-    // logical ops force CY and AC to clear
+    flags.AuxCarry = 0; // Explicitly 0
     flags.Carry    = 0;
-    flags.AuxCarry = 0;
 
     regs.A = regs.A ^ src;
-
     flags.Zero   = __calculateZero(regs.A);
     flags.Sign   = __calculateSign(regs.A);
     flags.Parity = __calculateParity(regs.A);
-
     PC += 1;
 }
 
-void op_CMP(uint8_t src)
+
+
+void op_XRI(uint8_t op1)
 {
-    // evaluate borrow flags using the source value
-    flags.AuxCarry = __calculateAuxCarrySub(regs.A, src);
-    flags.Carry    = (regs.A < src);
+    regs.A = regs.A ^ op1;
 
-    // dont actually save this anywhere just update flags
-    uint8_t result = regs.A - src;
-
-    flags.Zero   = __calculateZero(result);
-    flags.Sign   = __calculateSign(result);
-    flags.Parity = __calculateParity(result);
-
-    PC += 1;
-}
-
-void op_CPI(uint8_t op1)
-{
-    // evaluate borrow flags using the source value
-    flags.AuxCarry = __calculateAuxCarrySub(regs.A, op1);
-    flags.Carry    = (regs.A < op1);
-
-    uint8_t result = regs.A - op1;
-
-    flags.Zero   = __calculateZero(result);
-    flags.Sign   = __calculateSign(result);
-    flags.Parity = __calculateParity(result);
-
-    PC += 2;
-}
-
-void op_ORI(uint8_t op1)
-{
-    // 1. 8080 Rules: Logical operations explicitly clear CY and AC
-    flags.Carry    = 0;
     flags.AuxCarry = 0;
+    flags.Carry    = 0;
 
-    // 2. Perform the bitwise OR operation
-    regs.A = regs.A | op1;
-
-    // 3. Update standard status flags on the final result
     flags.Zero   = __calculateZero(regs.A);
     flags.Sign   = __calculateSign(regs.A);
     flags.Parity = __calculateParity(regs.A);
-
-    // 4. Advance PC by instruction length
     PC += 2;
 }
 
 void op_ORA(uint8_t src)
 {
-    // 1. Logical operations force CY and AC to clear
+    flags.AuxCarry = 0; // Explicitly 0
     flags.Carry    = 0;
-    flags.AuxCarry = 0;
 
-    // 2. Perform the bitwise OR
     regs.A = regs.A | src;
-
-    // 3. Evaluate standard status indicators
     flags.Zero   = __calculateZero(regs.A);
     flags.Sign   = __calculateSign(regs.A);
     flags.Parity = __calculateParity(regs.A);
-
-    // 4. ORA register variants are all 1-byte long
     PC += 1;
 }
 
-void op_XRI(uint8_t op1)
+void op_ORI(uint8_t op1)
 {
-    // 1. Logical operations explicitly clear CY and AC
-    flags.Carry    = 0;
+    regs.A = regs.A | op1;
+
     flags.AuxCarry = 0;
+    flags.Carry    = 0;
 
-    // 2. Perform the bitwise XOR operation
-    regs.A = regs.A ^ op1;
-
-    // 3. Update standard status flags on the final result
     flags.Zero   = __calculateZero(regs.A);
     flags.Sign   = __calculateSign(regs.A);
     flags.Parity = __calculateParity(regs.A);
-
-    // 4. Advance PC by instruction length
     PC += 2;
 }
-
 
 static void push16(uint16_t value)
 {
@@ -918,4 +617,160 @@ void op_RST(uint8_t vector)
 {
     push16(PC + 1);
     PC = (uint16_t)vector * 8;
+}
+
+void op_CC (uint8_t op1, uint8_t op2) { if ( flags.Carry)  doCall(op1, op2); else PC += 3; }
+void op_CPO(uint8_t op1, uint8_t op2) { if (!flags.Parity) doCall(op1, op2); else PC += 3; }
+void op_CM (uint8_t op1, uint8_t op2) { if ( flags.Sign)   doCall(op1, op2); else PC += 3; }
+void op_CP (uint8_t op1, uint8_t op2) { if (!flags.Sign)   doCall(op1, op2); else PC += 3; }
+
+// ─── ADDITION ────────────────────────────────────────────────────────────────
+
+void op_ADD(uint8_t src)
+{
+    uint16_t result = (uint16_t)regs.A + src;
+
+    flags.AuxCarry = ((regs.A ^ src ^ result) & 0x10) != 0;
+    flags.Carry    = (result > 0xFF);
+
+    regs.A = (uint8_t)result;
+    flags.Zero   = __calculateZero(regs.A);
+    flags.Sign   = __calculateSign(regs.A);
+    flags.Parity = __calculateParity(regs.A);
+    PC += 1;
+}
+
+void op_ADI(uint8_t op1)
+{
+    uint16_t result = (uint16_t)regs.A + op1;
+
+    flags.AuxCarry = ((regs.A ^ op1 ^ result) & 0x10) != 0;
+    flags.Carry    = (result > 0xFF);
+
+    regs.A = (uint8_t)result;
+    flags.Zero   = __calculateZero(regs.A);
+    flags.Sign   = __calculateSign(regs.A);
+    flags.Parity = __calculateParity(regs.A);
+    PC += 2;
+}
+
+void op_ADC(uint8_t src)
+{
+    uint8_t carryIn = flags.Carry ? 1 : 0;
+    uint16_t result = (uint16_t)regs.A + src + carryIn;
+
+    flags.AuxCarry = ((regs.A ^ src ^ result) & 0x10) != 0;
+    flags.Carry    = (result > 0xFF);
+
+    regs.A = (uint8_t)result;
+    flags.Zero   = __calculateZero(regs.A);
+    flags.Sign   = __calculateSign(regs.A);
+    flags.Parity = __calculateParity(regs.A);
+    PC += 1;
+}
+
+void op_ACI(uint8_t op1)
+{
+    uint8_t carryIn = flags.Carry ? 1 : 0;
+    uint16_t result = (uint16_t)regs.A + op1 + carryIn;
+
+    flags.AuxCarry = ((regs.A ^ op1 ^ result) & 0x10) != 0;
+    flags.Carry    = (result > 0xFF);
+
+    regs.A = (uint8_t)result;
+    flags.Zero   = __calculateZero(regs.A);
+    flags.Sign   = __calculateSign(regs.A);
+    flags.Parity = __calculateParity(regs.A);
+    PC += 2;
+}
+
+// ─── SUBTRACTION & BORROW ────────────────────────────────────────────────────
+
+void op_SUB(uint8_t src)
+{
+    uint16_t result = (uint16_t)regs.A - src;
+
+    // Subtraction uses inverted XOR sum to track 8080 hardware adder carries
+    flags.AuxCarry = (~(regs.A ^ src ^ result) & 0x10) != 0;
+    flags.Carry    = (regs.A < src);
+
+    regs.A = (uint8_t)result;
+    flags.Zero   = __calculateZero(regs.A);
+    flags.Sign   = __calculateSign(regs.A);
+    flags.Parity = __calculateParity(regs.A);
+    PC += 1;
+}
+
+void op_SUI(uint8_t op1)
+{
+    uint16_t result = (uint16_t)regs.A - op1;
+
+    flags.AuxCarry = (~(regs.A ^ op1 ^ result) & 0x10) != 0;
+    flags.Carry    = (regs.A < op1);
+
+    regs.A = (uint8_t)result;
+    flags.Zero   = __calculateZero(regs.A);
+    flags.Sign   = __calculateSign(regs.A);
+    flags.Parity = __calculateParity(regs.A);
+    PC += 2;
+}
+
+void op_SBB(uint8_t src)
+{
+    uint8_t borrowIn = flags.Carry ? 1 : 0;
+    uint16_t result = (uint16_t)regs.A - src - borrowIn;
+
+    flags.AuxCarry = (~(regs.A ^ src ^ result) & 0x10) != 0;
+    flags.Carry    = (regs.A < (uint16_t)src + borrowIn);
+
+    regs.A = (uint8_t)result;
+    flags.Zero   = __calculateZero(regs.A);
+    flags.Sign   = __calculateSign(regs.A);
+    flags.Parity = __calculateParity(regs.A);
+    PC += 1;
+}
+
+void op_SBI(uint8_t op1)
+{
+    uint8_t borrowIn = flags.Carry ? 1 : 0;
+    uint16_t result = (uint16_t)regs.A - op1 - borrowIn;
+
+    flags.AuxCarry = (~(regs.A ^ op1 ^ result) & 0x10) != 0;
+    flags.Carry    = (regs.A < (uint16_t)op1 + borrowIn);
+
+    regs.A = (uint8_t)result;
+    flags.Zero   = __calculateZero(regs.A);
+    flags.Sign   = __calculateSign(regs.A);
+    flags.Parity = __calculateParity(regs.A);
+    PC += 2;
+}
+
+// ─── COMPARISONS ─────────────────────────────────────────────────────────────
+
+void op_CMP(uint8_t src)
+{
+    uint16_t result = (uint16_t)regs.A - src;
+
+    flags.AuxCarry = (~(regs.A ^ src ^ result) & 0x10) != 0;
+    flags.Carry    = (regs.A < src);
+
+    uint8_t res8 = (uint8_t)result;
+    flags.Zero   = __calculateZero(res8);
+    flags.Sign   = __calculateSign(res8);
+    flags.Parity = __calculateParity(res8);
+    PC += 1;
+}
+
+void op_CPI(uint8_t op1)
+{
+    uint16_t result = (uint16_t)regs.A - op1;
+
+    flags.AuxCarry = (~(regs.A ^ op1 ^ result) & 0x10) != 0;
+    flags.Carry    = (regs.A < op1);
+
+    uint8_t res8 = (uint8_t)result;
+    flags.Zero   = __calculateZero(res8);
+    flags.Sign   = __calculateSign(res8);
+    flags.Parity = __calculateParity(res8);
+    PC += 2;
 }

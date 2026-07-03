@@ -545,7 +545,17 @@ static std::array<OpHandler, 256> build_dispatch()
     table[OP_POP_H] = h_POP_H;
     table[OP_POP_PSW] = h_POP_PSW;
     table[OP_OUT] = h_OUT;
-    table[OP_IN] = h_IN;    return table;
+    table[OP_IN] = h_IN;
+
+    table[0x08] = h_NOP;
+    table[0x10] = h_NOP;
+    table[0x18] = h_NOP;
+    table[0x20] = h_NOP;
+    table[0x28] = h_NOP;
+    table[0x30] = h_NOP;
+    table[0x38] = h_NOP;
+
+    return table;
 }
 
 static const std::array<OpHandler, 256> dispatch = build_dispatch();
@@ -609,12 +619,12 @@ bool step()
     uint8_t op1    = memory[PC + 1];
     uint8_t op2    = memory[PC + 2];
 
-    std::cout << "[ "
+    /*std::cout << "[ "
               << std::left << std::setw(12) << std::setfill(' ') << MNEMONICS[opcode]
               << " ] 0x"
               << std::hex << std::setw(2) << std::setfill('0') << (int)opcode
               << "  PC=0x" << std::setw(4) << PC
-              << "\n";
+              << "\n";*/
 
     // decode and exectuet
     OpHandler handler = dispatch[opcode];
