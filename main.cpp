@@ -8,7 +8,7 @@ void __8080PRE()
 
 int main()
 {
-    if (!loadRom("roms/cpu_tests/8080EXM.COM", 0x0100)) {
+    if (!loadRom("roms/cpu_tests/8080EXER.COM", 0x0100)) {
         return 1;
     }
 
