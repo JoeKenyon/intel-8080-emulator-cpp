@@ -560,13 +560,13 @@ static std::array<OpHandler, 256> build_dispatch()
 
 static const std::array<OpHandler, 256> dispatch = build_dispatch();
 
-bool step()
+int step()
 {
 // ── CP/M Program Exit Interception ───────────────────────────────────────
     if (PC == 0x0000)
     {
-        std::cout << "\nProgram terminated cleanly via warm boot (PC=0x0000).\n";
-        return false; // Returning false breaks the main loop and exits the emulator
+       // std::cout << "\nProgram terminated cleanly via warm boot (PC=0x0000).\n";
+        //return false; // Returning false breaks the main loop and exits the emulator
     }
 
 // ── CP/M bdos interception for cpudiag.bin ───────────────────────────────
@@ -631,5 +631,8 @@ bool step()
     if (!handler)
         return h_undefined(opcode);
 
-    return handler(op1, op2);
+
+    bool halt = handler(op1, op2);
+
+    return OPCODE_CYCLES[opcode];
 }

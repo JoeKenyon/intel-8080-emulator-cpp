@@ -378,37 +378,48 @@ void op_SPHL()
 
 // ─── I/O and interrupt control ───────────────────────────────────────────────
 
+uint16_t shift_register = 0;
+uint8_t shift_offset = 0;
+
 void op_OUT(uint8_t port)
 {
-    if (port == 0)
-    {
-        exit(0);// or set a loop break flag here
-    }
-    else if (port == 1)
-    {
-        uint8_t operation = regs.C;
+    // The CPU wants to talk to hardware
+    uint8_t value = regs.A; // OUT always sends from the Accumulator
 
-        if (operation == 2) {
-            // Print character in E
-            std::cout << (char)regs.E;
-        }
-        else if (operation == 9) {
-            // Print string from memory at DE until '$'
-            uint16_t addr = ((uint16_t)regs.D << 8) | regs.E;
-            while (memory[addr] != '$') {
-                std::cout << (char)memory[addr];
-                addr++;
-            }
-        }
+    if (port == 2) {
+        // Set the shift offset (only lower 3 bits matter)
+        shift_offset = value & 0x07;
+    }
+    else if (port == 4) {
+        // Shift data into the 16-bit register
+        // Old high byte shifts to low byte, new data becomes high byte
+        shift_register = (shift_register >> 8) | (value << 8);
     }
 
-    PC += 2; // OUT is a 2-byte instruction
+    PC += 2;
 }
+
+// Ensure you include your external port variables if they are in main.cpp
+extern uint8_t port1;
+extern uint8_t port2;
 
 void op_IN(uint8_t port)
 {
-    // read from input port into A
-    (void)port;
+    // The CPU is requesting data from hardware, put it in the Accumulator
+    if (port == 1) {
+        regs.A = port1; // Read player 1 inputs
+    }
+    else if (port == 2) {
+        regs.A = port2; // Read player 2/DIP switches
+    }
+    else if (port == 3) {
+        // Read the result from the custom hardware shift register
+        regs.A = (shift_register >> (8 - shift_offset)) & 0xFF;
+    }
+    else {
+        regs.A = 0; // Default unconnected port
+    }
+
     PC += 2;
 }
 
