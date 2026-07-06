@@ -2,8 +2,48 @@
 #include <cstdint>
 #include <cstring>
 #include <iostream>
+#include <fstream>
+#include "Intel8080.h" // Include your shiny new class header!
 
-#include "emulator.h"
+bool loadRom(Memory& mem, const std::string& filename, uint16_t startAddress)
+{
+    // Open the file in binary mode ("rb") and move the file pointer to the end
+    std::ifstream file(filename, std::ios::binary | std::ios::ate);
+
+    if (!file.is_open())
+    {
+        std::cerr << "Error: Failed to open ROM file: " << filename << "\n";
+        return false;
+    }
+
+    // Get the size of the ROM file based on the end position
+    std::streamsize size = file.tellg();
+
+    // Move back to the beginning of the file to read it
+    file.seekg(0, std::ios::beg);
+
+    // Read the file bytes directly into a temporary buffer
+    std::vector<char> buffer(size);
+    if (!file.read(buffer.data(), size))
+    {
+        std::cerr << "Error: Failed to read ROM data from: " << filename << "\n";
+        return false;
+    }
+
+    // Copy the bytes into your virtual memory array one by one
+    for (std::streamsize i = 0; i < size; i++)
+    {
+        // Enforce 16-bit address wrapping just in case the ROM is too big
+        uint16_t currentAddress = (startAddress + i) & 0xFFFF;
+
+        mem.write(currentAddress, static_cast<uint8_t>(buffer[i]));
+    }
+
+    std::cout << "Successfully loaded " << filename << " (" << size << " bytes) at 0x"
+              << std::hex << startAddress << std::dec << "\n";
+
+    return true;
+}
 
 // ───────────────────────────────
 // SCREEN
@@ -17,23 +57,32 @@ SDL_Texture* texture = nullptr;
 
 uint32_t framebuffer[WIDTH * HEIGHT];
 
+// Instantiate your CPU right here globally (or locally in main)
+Intel8080 cpu;
+
+// ─── EXTENSIONS FOR YOUR PORTS ───
+uint8_t port1 = 0;
+uint8_t port2 = 0;
+
 // ───────────────────────────────
 // VIDEO RENDER
 // ───────────────────────────────
 void drawScreen()
 {
     std::memset(framebuffer, 0, sizeof(framebuffer));
-    uint8_t* video = &memory[0x2400];
 
-    for (int i = 0; i < WIDTH; i++) // i goes 0 to 223 (X axis columns)
+    // Read directly from the CPU's internalized memory layout container!
+    uint8_t* video = &cpu.mem.data[0x2400]; // Or use cpu.mem.data + 0x2400 if data is public
+
+    for (int i = 0; i < WIDTH; i++)
     {
-        for (int j = 0; j < 32; j++) // j goes 0 to 31 (8-pixel vertical chunks)
+        for (int j = 0; j < 32; j++)
         {
             uint8_t b = video[i * 32 + j];
             for (int bit = 0; bit < 8; bit++)
             {
-                int px = i;                   // X is simply the column
-                int py = 255 - (j * 8 + bit); // Y starts at bottom (255) and goes up
+                int px = i;
+                int py = 255 - (j * 8 + bit);
 
                 bool on = b & (1 << bit);
                 framebuffer[py * WIDTH + px] = on ? 0xFFFFFFFF : 0xFF000000;
@@ -45,39 +94,12 @@ void drawScreen()
 }
 
 // ───────────────────────────────
-// INTERRUPTS
-// ───────────────────────────────
-void push16(uint16_t v)
-{
-    memory[--SP] = (v >> 8) & 0xFF;
-    memory[--SP] = v & 0xFF;
-}
-
-void triggerInterrupt(uint8_t vector)
-{
-    push16(PC);
-    PC = vector;
-}
-
-// ───────────────────────────────
 // INPUT
 // ───────────────────────────────
-uint8_t port1 = 0; // P1 controls
-uint8_t port2 = 0; // P2 controls (optional for now)
-
 void handleInput()
 {
     const Uint8* keys = SDL_GetKeyboardState(nullptr);
-
     port1 = 0;
-
-    // Space Invaders Port 1 Bitmap:
-    // Bit 0: Coin
-    // Bit 1: P2 Start
-    // Bit 2: P1 Start
-    // Bit 4: P1 Shoot
-    // Bit 5: P1 Left
-    // Bit 6: P1 Right
 
     if (keys[SDL_SCANCODE_C])     port1 |= (1 << 0); // Insert Coin
     if (keys[SDL_SCANCODE_1])     port1 |= (1 << 2); // Player 1 Start
@@ -92,18 +114,20 @@ void handleInput()
 int main()
 {
     // ─── LOAD ROMS ───
-    if (!loadRom("roms/invaders.h", 0x0000) ||
-        !loadRom("roms/invaders.g", 0x0800) ||
-        !loadRom("roms/invaders.f", 0x1000) ||
-        !loadRom("roms/invaders.e", 0x1800))
+    // Note: Update your loadRom helper to write into cpu.mem instead of a raw global array!
+    if (!loadRom(cpu.mem, "roms/invaders.h", 0x0000) ||
+        !loadRom(cpu.mem, "roms/invaders.g", 0x0800) ||
+        !loadRom(cpu.mem, "roms/invaders.f", 0x1000) ||
+        !loadRom(cpu.mem, "roms/invaders.e", 0x1800))
     {
         std::cerr << "ROM load failed\n";
         return 1;
     }
 
     // ─── CPU INIT ───
-    PC = 0x0000;
-    SP = 0xF000;
+    // The constructor already zeroes things, but you can explicitly point the Stack Pointer
+    cpu.PC = 0x0000;
+    cpu.SP = 0xF000;
 
     // ─── SDL INIT ───
     SDL_Init(SDL_INIT_VIDEO);
@@ -120,26 +144,22 @@ int main()
 
     texture = SDL_CreateTexture(
         renderer,
-        SDL_PIXELFORMAT_ARGB8888, // IMPORTANT FIX
+        SDL_PIXELFORMAT_ARGB8888,
         SDL_TEXTUREACCESS_STREAMING,
         WIDTH,
         HEIGHT);
 
     bool running = true;
-
-    bool irqFlip = false;
-
-    // timing
     const double FPS = 60.0;
+
+    // Switch from counting arbitrary instructions to tracking micro-cycles accurately!
     const int CYCLES_PER_FRAME = 2000000 / FPS;
+    const int CYCLES_PER_HALF_FRAME = CYCLES_PER_FRAME / 2;
 
     // ─── MAIN LOOP ───
-    // ─── MAIN LOOP ───
-    const int INSTRUCTIONS_PER_FRAME = 33333 / 5; // roughly 6666 instructions per frame
-
     while (running)
     {
-        uint64_t frameStart = SDL_GetTicks64(); // Track when the frame started
+        uint64_t frameStart = SDL_GetTicks64();
 
         SDL_Event e;
         while (SDL_PollEvent(&e))
@@ -149,29 +169,30 @@ int main()
 
         handleInput();
 
-        // ─── CPU EXECUTION (FIRST HALF OF SCREEN) ───
-        int executed = 0;
-        while (executed < INSTRUCTIONS_PER_FRAME / 2)
+        // ─── FIRST HALF OF SCREEN EXECUTION ───
+        int cycles = 0;
+        while (cycles < CYCLES_PER_HALF_FRAME)
         {
-            executed += step(); // Assuming this returns 1 per instruction
+            // step() now accurately returns 4, 7, 10 etc. based on the real opcode execution timing
+            cycles += cpu.step();
         }
 
-        // The arcade hardware fires RST 1 when the electron beam hits the middle of the screen
-        if (interrupts.enabled) {
-            interrupts.enabled = false;
-            triggerInterrupt(0x0008);
+        // Trigger Mid-Screen Interrupt (RST 1) via your internal class state container
+        if (cpu.interrupts.enabled) {
+            cpu.interrupts.pending = true;
+            cpu.interrupts.vector = 0xCF; // Opcode for RST 1 is 0xCF (Vector address 0x0008)
         }
 
-        // ─── CPU EXECUTION (SECOND HALF OF SCREEN) ───
-        while (executed < INSTRUCTIONS_PER_FRAME)
+        // ─── SECOND HALF OF SCREEN EXECUTION ───
+        while (cycles < CYCLES_PER_FRAME)
         {
-            executed += step();
+            cycles += cpu.step();
         }
 
-        // The arcade hardware fires RST 2 at the bottom of the screen (VBLANK)
-        if (interrupts.enabled) {
-            interrupts.enabled = false;
-            triggerInterrupt(0x0010);
+        // Trigger VBLANK End-Of-Screen Interrupt (RST 2)
+        if (cpu.interrupts.enabled) {
+            cpu.interrupts.pending = true;
+            cpu.interrupts.vector = 0xD7; // Opcode for RST 2 is 0xD7 (Vector address 0x0010)
         }
 
         // ─── RENDER ───
@@ -184,7 +205,7 @@ int main()
         uint64_t frameTime = SDL_GetTicks64() - frameStart;
         if (frameTime < 16)
         {
-            SDL_Delay(16 - frameTime); // Sleep for the remaining milliseconds
+            SDL_Delay(16 - frameTime);
         }
     }
 
