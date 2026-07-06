@@ -32,17 +32,7 @@ int Intel8080::step()
     }
 
     // Fetch the next instruction byte boundary
-    uint16_t currentPC = PC; // Save the PC before we increment it
     uint8_t opcode = getByte();
-
-    if (currentPC >= 0x0000 && currentPC <= 0x0100)
-        {
-            std::cout << "BOOT TRACE -> PC: 0x" << std::hex << currentPC
-                        << " Opcode: 0x" << (int)opcode
-                        << " SP: 0x" << SP
-                        << " A: 0x" << (int)regs.A
-                        << " HL: 0x" << regs.HL << std::dec << "\n";
-    }
 
     // Retrieve instruction telemetry records from your multiplexed table
     const Instruction& inst = OPCODE_TABLE[opcode];
