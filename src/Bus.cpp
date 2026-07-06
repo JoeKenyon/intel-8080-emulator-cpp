@@ -1,5 +1,31 @@
 #include "Bus.h"
-#include <iostream>
+
+Bus::Bus() noexcept
+{
+    setupPortHandlers();
+}
+
+void Bus::setupPortHandlers() noexcept
+{
+    // Port 2 OUT: sets the bit shift offset (only uses the lower 3 bits)
+    m_outHandlers[2] = [this](uint8_t value) noexcept
+    {
+        m_shiftOffset = value & 0b0000'0111;
+    };
+
+    // Port 4 OUT: shifts the 16-bit register — moves the old high byte to
+    // the low byte, and appends the new value as the new high byte.
+    m_outHandlers[4] = [this](uint8_t value) noexcept
+    {
+        m_shiftRegister = (m_shiftRegister >> 8) | (static_cast<uint16_t>(value) << 8);
+    };
+
+    // Port 3 IN: reads back the content of the shift register, shifted by the offset
+    m_inHandlers[3] = [this]() noexcept -> uint8_t
+    {
+        return static_cast<uint8_t>((m_shiftRegister >> (8 - m_shiftOffset)) & 0b1111'1111);
+    };
+}
 
 uint8_t Bus::readMemory(uint16_t address) const noexcept
 {
@@ -37,34 +63,30 @@ void Bus::writePort(uint8_t port, uint8_t value) noexcept
 {
     ports[port] = value;
 
-    switch (port)
+    if (m_outHandlers[port])
     {
-        
-        case 2:
-            // Port 2 sets the bit shift offset (only uses the lower 3 bits)
-            m_shiftOffset = value & 0b0000'0111;
-            break;
-
-        case 4:
-            // Port 4 shifts the 16-bit register: moves the old high byte to the low byte,
-            // and appends the new value as the new high byte.
-            m_shiftRegister = (m_shiftRegister >> 8) | (static_cast<uint16_t>(value) << 8);
-            break;
+        m_outHandlers[port](value);
     }
 }
 
 uint8_t Bus::readPort(uint8_t port) noexcept
 {
-    switch (port)
+    if (m_inHandlers[port])
     {
-        case 3:
-        {
-            // Port 3 reads back the content of the shift register, shifted by the offset
-            uint8_t result = static_cast<uint8_t>((m_shiftRegister >> (8 - m_shiftOffset)) & 0b1111'1111);
-            return result;
-        }
-        default:
-            // Return whatever data was sent to the port from the host system (Inputs)
-            return ports[port];
+        return m_inHandlers[port]();
     }
+
+    // No handler registered — return whatever data was sent to the port
+    // from the host system (e.g. Display::handleInput writing ports 1/2).
+    return ports[port];
+}
+
+void Bus::setOutHandler(uint8_t port, OutHandler handler) noexcept
+{
+    m_outHandlers[port] = std::move(handler);
+}
+
+void Bus::setInHandler(uint8_t port, InHandler handler) noexcept
+{
+    m_inHandlers[port] = std::move(handler);
 }

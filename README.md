@@ -54,30 +54,65 @@ Emulator          owns Bus, Intel8080, Display; runs the 60Hz frame loop
 ```
 
 CPU logic is split across:
-- `Intel8080.cpp` — core fetch/decode/dispatch loop, register decode helper
-- `Opcodes_ALU.cpp` — arithmetic/logic instructions and flag helpers
-- `Opcodes_Move.cpp` — data movement, stack, register pair ops
-- `Opcodes_System.cpp` — jumps, calls, returns, RST, interrupts, I/O
+- `Intel8080.cpp` - core fetch/decode/dispatch loop, register decode helper
+- `Opcodes_ALU.cpp` - arithmetic/logic instructions and flag helpers
+- `Opcodes_Move.cpp` - data movement, stack, register pair ops
+- `Opcodes_System.cpp` - jumps, calls, returns, RST, interrupts, I/O
 
 Each opcode handler is a single member function driven by bitfields decoded
 from the raw opcode byte at runtime (e.g. `op_MOV`, `op_AluReg`), rather than
 one function per opcode.
 
+## Port I/O
+
+`Bus` dispatches `IN`/`OUT` through per-port handler tables (`std::function`,
+indexed by port number) instead of a hardcoded switch. `setupPortHandlers()`
+wires up the Space Invaders shift-register hardware:
+
+- `OUT 2` - sets the shift offset
+- `OUT 4` - shifts a new byte into the 16-bit shift register
+- `IN 3`  - reads the shift register at the current offset
+
+Ports with no registered handler fall through to the raw `ports[]` array -
+this is how plain input ports (1, 2 for buttons/DIP switches) work, since
+`Display::handleInput` writes directly into that array.
+
+External code can register or override a port at runtime via
+`Bus::setOutHandler` / `Bus::setInHandler`, without `Bus` needing to know
+who's calling. The CPU test harness (see below) uses this to hook ports 0
+and 1 for its own purposes, without touching `Bus` at all.
+
 ## CPU test mode
 
 Build with `CONFIG_RUN_TEST_MODE` defined to run the classic 8080 diagnostic
-ROMs (`TST8080.COM`, `CPUTEST.COM`, `8080PRE.COM`, `8080EXM.COM`) through a
-CP/M BDOS-intercept harness instead of booting the Space Invaders hardware.
-Output is printed to stdout for verification.
+ROMs (`TST8080.COM`, `CPUTEST.COM`, `8080PRE.COM`, `8080EXM.COM`) instead of
+booting the Space Invaders hardware.
+
+The harness injects real instructions at the two addresses CP/M test ROMs
+call into, rather than intercepting on `PC`:
+
+- `0x0000`: `OUT 0,A` - the ROM's own exit signal
+- `0x0005`: `OUT 1,A` then `RET` - stands in for a BDOS call
+
+`Bus::setOutHandler` hooks port 0 to set a `testFinished` flag, and port 1
+to print based on whatever the ROM left in registers C/D/E (function 2 =
+print character, function 9 = print `$`-terminated string)
+Because these are real instructions, `cpu.step()` charges their actual cost from `OPCODE_TABLE`, so the main loop
+is just:
+
+```cpp
+while (!testFinished)
+{
+    cycles_n += cpu.step();
+}
+```
+Cycle counts are printed against known-good expected values for each ROM at the end of each run.
 
 ## Status / known gaps
 
-- I/O ports are currently handled via a hardcoded switch in `Bus`; a
-  per-port handler table is a planned cleanup (see below).
 - Memory access is routed through `Bus`, but a full `Bus` abstraction
   (for supporting machines beyond Space Invaders) is not yet in place.
 
 ## Roadmap
 
-- [ ] Replace port switch statements with per-port handler tables
 - [ ] Additional ROM target support

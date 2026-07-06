@@ -1,6 +1,7 @@
 #include "Emulator.h"
 
-#ifndef  CONFIG_RUN_TEST_MODE
+//#define CONFIG_RUN_TEST_MODE
+#ifndef CONFIG_RUN_TEST_MODE
 
 int main()
 {
@@ -28,6 +29,38 @@ int main()
     Bus& bus = emulator.getBus();
     Intel8080& cpu = emulator.getCPU();
     bus.romBoundary = 0;
+
+    bool testFinished = false;
+
+    // Port 0 OUT: the test ROMs execute this as their "done" signal.
+    bus.setOutHandler(0, [&testFinished](uint8_t)
+    {
+        testFinished = true;
+    });
+
+    // Port 1 OUT: stands in for the CP/M BDOS print calls. The CPU actually
+    // executes real CALL 0x0005 / OUT 1,A / RET instructions — we just read
+    // whatever the ROM left in C/D/E to decide what to print, same as a real
+    // BDOS would.
+    bus.setOutHandler(1, [&cpu, &bus](uint8_t)
+    {
+        uint8_t operation = cpu.regs.C;
+
+        if (operation == 2) // Print Character (register E)
+        {
+            std::cout << static_cast<char>(cpu.regs.E);
+        }
+        else if (operation == 9) // Print String Block ('$'-terminated, at DE)
+        {
+            uint16_t addr = cpu.regs.DE;
+            do
+            {
+                std::cout << static_cast<char>(bus.readMemory(addr++));
+            } while (bus.readMemory(addr) != '$');
+        }
+
+        std::cout << std::flush;
+    });
 
     std::vector<std::string> romPaths =
     {
@@ -59,62 +92,27 @@ int main()
         bus.mem.data[0x0000] = 0xD3; // OUT instruction
         bus.mem.data[0x0001] = 0x00; // Port 0 (System Exit)
 
-        bus.mem.data[0x0005] = 0xC9;
-
-        bus.mem.data[0x0006] = 0x00; // Low Byte of RAM size
-        bus.mem.data[0x0007] = 0xF0; // High Byte of RAM size (0xF000)
+        bus.mem.data[0x0005] = 0xD3; // OUT instruction
+        bus.mem.data[0x0006] = 0x01; // Port 1 (BDOS print call)
+        bus.mem.data[0x0007] = 0xC9; // RET, back into the test ROM
 
         cpu.PC = 0x0100;
         cpu.SP = 0xF000;
 
         size_t instruction_n = 0;
         size_t cycles_n = 0;
+        testFinished = false;
 
-        while (true)
+        while (!testFinished)
         {
-            if (cpu.PC == 0x0005)
-            {
-                if (cpu.regs.C == 0) // CP/M Function 0: System Reset / Clean Exit
-                {
-                    cycles_n += 10;
-                    instruction_n += 1;
-                    break;
-                }
-                else if (cpu.regs.C == 9) // Function 9: Print String Block
-                {
-                    uint16_t strAddr = cpu.regs.DE;
-                    while (bus.readMemory(strAddr) != '$')
-                    {
-                        std::cout << static_cast<char>(bus.readMemory(strAddr++));
-                    }
-                    std::cout << std::flush;
-                }
-                else if (cpu.regs.C == 2) // Function 2: Print Character
-                {
-                    std::cout << static_cast<char>(cpu.regs.E) << std::flush;
-                }
-
-                // Standard rigs execute an OUT then a RET here (2 inst, 20 cycles)
-                cycles_n += 20;
-                instruction_n += 2;
-
-                cpu.PC = cpu.pop16(); // Return to test execution
-                continue; // Skip the physical CPU step
-            }
-
-            if (cpu.PC == 0x0000)
-            {
-                // Standard rigs execute an exit OUT instruction here
-                cycles_n += 10;
-                instruction_n += 1;
-                break;
-            }
-
-            // Run the step
             cycles_n += cpu.step();
             instruction_n++;
         }
-        std::cout << "\n****************************************\n";
+
+        long long diff = static_cast<long long>(expectedCycles[i]) - static_cast<long long>(cycles_n);
+        std::cout << "\n*** " << instruction_n << " instructions executed on " << cycles_n
+                   << " cycles (expected=" << expectedCycles[i] << ", diff=" << diff << ")\n";
+        std::cout << "****************************************\n";
     }
 
     return 0;
