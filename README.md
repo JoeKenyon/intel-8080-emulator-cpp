@@ -3,7 +3,7 @@
 A cycle-accurate Intel 8080 CPU emulator written in C++20, targeting Space
 Invaders as the primary test ROM, with SDL2 for video and input.
 
-![space_invaders](space_invaders.png)
+<img src="space_invaders.png" alt="running space invaders" width="350"/>
 
 ## Features
 
@@ -110,7 +110,7 @@ while (!testFinished)
 ```
 Cycle counts are printed against known-good expected values for each ROM at the end of each run.
 
-![testing](testing.png)
+<img src="testing.png" alt="test results" width="450"/>
 
 ## Status / known gaps
 
