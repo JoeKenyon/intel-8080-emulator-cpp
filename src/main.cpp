@@ -3,7 +3,7 @@
 #include <fstream>
 #include <filesystem>
 
-#define CONFIG_RUN_DIAGNOSTIC_MODE
+//#define CONFIG_RUN_DIAGNOSTIC_MODE
 
 int main()
 {
