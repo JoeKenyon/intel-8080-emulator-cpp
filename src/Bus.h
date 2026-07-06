@@ -26,6 +26,8 @@ public:
     uint8_t readPort(uint8_t port) noexcept;
     void writePort(uint8_t port, uint8_t value) noexcept;
 
+    uint16_t romBoundary = 0x2000;
+
 private:
     // Space Invaders specific hardware bit-shift registers
     uint16_t m_shiftRegister{0};

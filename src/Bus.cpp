@@ -1,4 +1,5 @@
 #include "Bus.h"
+#include <iostream>
 
 uint8_t Bus::readMemory(uint16_t address) const noexcept
 {
@@ -8,7 +9,7 @@ uint8_t Bus::readMemory(uint16_t address) const noexcept
 void Bus::writeMemory(uint16_t address, uint8_t value) noexcept
 {
     // Only block writes if they hit the actual ROM boundaries (0x0000 - 0x1FFF)
-    if (address >= 0x2000)
+    if (address >= romBoundary)
     {
         mem.write(address, value);
     }
@@ -22,11 +23,11 @@ uint16_t Bus::readMemoryWord(uint16_t address) const noexcept
 void Bus::writeMemoryWord(uint16_t address, uint16_t value) noexcept
 {
     // Separately protect each byte of the word write so clipping writes are safe!
-    if (address >= 0x2000)
+    if (address >= romBoundary)
     {
         mem.write(address, value & 0xFF);
     }
-    if ((address + 1) >= 0x2000)
+    if ((address + 1) >= romBoundary)
     {
         mem.write(address + 1, (value >> 8) & 0xFF);
     }
@@ -38,6 +39,7 @@ void Bus::writePort(uint8_t port, uint8_t value) noexcept
 
     switch (port)
     {
+        
         case 2:
             // Port 2 sets the bit shift offset (only uses the lower 3 bits)
             m_shiftOffset = value & 0b0000'0111;

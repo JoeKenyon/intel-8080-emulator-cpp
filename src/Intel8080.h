@@ -49,6 +49,7 @@ public:
     int step();
 
     void push16(uint16_t value) noexcept;
+    uint16_t pop16() noexcept;
 
     // Called by the system driver (Emulator) when hardware raises an interrupt.
     // Servicing itself happens inside step(), so the CPU's own state is never
@@ -67,7 +68,7 @@ private:
     uint16_t getWord() noexcept;
     uint8_t& decodeReg(uint8_t index) noexcept;
 
-    uint16_t pop16() noexcept;
+
     void doCall(uint16_t targetAddress) noexcept;
     void doReturn() noexcept;
 

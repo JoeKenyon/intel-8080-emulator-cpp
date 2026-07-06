@@ -1,4 +1,5 @@
 #include "Intel8080.h"
+#include <iostream>
 
 void Intel8080::doCall(uint16_t targetAddress) noexcept
 {

@@ -36,16 +36,6 @@ bool Emulator::boot(const char* windowTitle, int windowScale) noexcept
         return false;
     }
 
-    // Space Invaders ROM segments mapped consecutively into system space
-    if (!loadROM("./roms/invaders.h", 0x0000) ||
-        !loadROM("./roms/invaders.g", 0x0800) ||
-        !loadROM("./roms/invaders.f", 0x1000) ||
-        !loadROM("./roms/invaders.e", 0x1800))
-    {
-        std::cerr << "Error: ROM load sequence interrupted.\n";
-        return false;
-    }
-
     return true;
 }
 
