@@ -66,8 +66,8 @@ void Display::handleInput(std::array<uint8_t, 256>& ports) noexcept
         }
     }
 
-    ports[1] |= 0x08;  // Port 1, Bit 3 always high (Cabinet sanity check)
-    ports[2] &= ~0x04; // 👈 FIX: Clear Port 2, Bit 2 (Turn off the TILT sensor!)
+    ports[1] |= 0x08;  // Port 1, Bit 3 always high
+    ports[2] &= ~0x04; // Clear Port 2, Bit 2, turn off the TILT sensor
     ports[2] |= 0x40;  // Port 2, Bit 6 always high (Coin-door chassis wiring loop)
 }
 
