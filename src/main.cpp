@@ -1,30 +1,32 @@
 #include "Emulator.h"
-#include <iostream>
-#include <fstream>
-#include <filesystem>
 
-//#define CONFIG_RUN_DIAGNOSTIC_MODE
+#ifndef  CONFIG_RUN_TEST_MODE
 
 int main()
 {
     Emulator emulator;
-
-#ifndef  CONFIG_RUN_DIAGNOSTIC_MODE
-
     emulator.loadROM("./roms/invaders.h", 0x0000);
     emulator.loadROM("./roms/invaders.g", 0x0800);
     emulator.loadROM("./roms/invaders.f", 0x1000);
     emulator.loadROM("./roms/invaders.e", 0x1800);
 
-    if (emulator.boot("Intel 8080 Emulator", 4))
+    if (emulator.boot("Intel 8080 Emulator", 3))
     {
         emulator.run();
     }
+    return 0;
+}
 
 #else
+
+#include <iostream>
+#include <filesystem>
+
+int main()
+{
+    Emulator emulator;
     Bus& bus = emulator.getBus();
     Intel8080& cpu = emulator.getCPU();
-
     bus.romBoundary = 0;
 
     std::vector<std::string> romPaths =
@@ -57,7 +59,7 @@ int main()
         bus.mem.data[0x0000] = 0xD3; // OUT instruction
         bus.mem.data[0x0001] = 0x00; // Port 0 (System Exit)
 
-        bus.mem.data[0x0005] = 0xC9; // <--- ADD THIS: RET instruction
+        bus.mem.data[0x0005] = 0xC9;
 
         bus.mem.data[0x0006] = 0x00; // Low Byte of RAM size
         bus.mem.data[0x0007] = 0xF0; // High Byte of RAM size (0xF000)
@@ -115,7 +117,6 @@ int main()
         std::cout << "\n****************************************\n";
     }
 
-#endif
-
     return 0;
 }
+#endif
