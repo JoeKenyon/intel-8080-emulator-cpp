@@ -3,7 +3,6 @@
 const Intel8080::Instruction Intel8080::OPCODE_TABLE[256] =
 {
     // [Opcode] = { "Mnemonic", Cycles, &Intel8080::HandlerMethod }
-
     // 0x00
     [0x00] = { "NOP",         4,  &Intel8080::op_NOP },
     [0x01] = { "LXI B,D16",  10,  &Intel8080::op_LXI_Reg },
