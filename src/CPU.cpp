@@ -4,11 +4,25 @@
 
 CPU::CPU(IBus& b) : bus(b)
 {
+    PC = 0;
+    SP = 0;
+    A = 0; B = 0; C = 0; D = 0; E = 0; H = 0; L = 0;
+
+    // clear all flags
+    statusFlags.packed = 0;
+    statusFlags._one = 1;
+    statusFlags._zero1 = 0;
+    statusFlags._zero2 = 0;
+
+    // disable interrupts
+    systemFlags.interruptEnabled = false;
+    systemFlags.halted = false;
+    m_extraCycles = 0;
 }
 
 void CPU::requestInterrupt(uint8_t vector)
 {
-    // if the game called di() to disable interrupts, ignore the hardware
+    // if the program called di() to disable interrupts, ignore the hardware
     if (!systemFlags.interruptEnabled)
     {
         return;
@@ -21,7 +35,7 @@ void CPU::requestInterrupt(uint8_t vector)
     // if the cpu was sleeping via hlt(), the interrupt wakes it back up
     systemFlags.halted = false;
 
-    // perform the exact same logic as your software rst() handler
+    // perform the exact same logic as  software rst() handler
     pushWord(PC);
     PC = vector;
 }
@@ -185,16 +199,51 @@ void CPU::doCall(bool condition)
     }
 }
 
-// unconditional call
-void CPU::call() { uint16_t addr = fetchWord(); pushWord(PC); PC = addr; }
-void CPU::cc()   { doCall(statusFlags.Carry); }
-void CPU::cnc()  { doCall(!statusFlags.Carry); }
-void CPU::cz()   { doCall(statusFlags.Zero); }
-void CPU::cnz()  { doCall(!statusFlags.Zero); }
-void CPU::cp()   { doCall(!statusFlags.Sign); }
-void CPU::cm()   { doCall(statusFlags.Sign); }
-void CPU::cpe()  { doCall(statusFlags.Parity); }
-void CPU::cpo()  { doCall(!statusFlags.Parity); }
+void CPU::call()
+{
+    uint16_t addr = fetchWord();
+    pushWord(PC); PC = addr;
+}
+
+void CPU::cc()
+{
+    doCall(statusFlags.Carry);
+}
+
+void CPU::cnc()
+{
+    doCall(!statusFlags.Carry);
+}
+
+void CPU::cz()
+{
+    doCall(statusFlags.Zero);
+}
+
+void CPU::cnz()
+{
+    doCall(!statusFlags.Zero);
+}
+
+void CPU::cp()
+{
+    doCall(!statusFlags.Sign);
+}
+
+void CPU::cm()
+{
+    doCall(statusFlags.Sign);
+}
+
+void CPU::cpe()
+{
+    doCall(statusFlags.Parity);
+}
+
+void CPU::cpo()
+{
+    doCall(!statusFlags.Parity);
+}
 
 void CPU::doReturn(bool condition)
 {
@@ -207,15 +256,50 @@ void CPU::doReturn(bool condition)
     }
 }
 
-void CPU::ret() { PC = popWord(); }
-void CPU::rc()  { doReturn(statusFlags.Carry); }
-void CPU::rnc() { doReturn(!statusFlags.Carry); }
-void CPU::rz()  { doReturn(statusFlags.Zero); }
-void CPU::rnz() { doReturn(!statusFlags.Zero); }
-void CPU::rp()  { doReturn(!statusFlags.Sign); }
-void CPU::rm()  { doReturn(statusFlags.Sign); }
-void CPU::rpe() { doReturn(statusFlags.Parity); }
-void CPU::rpo() { doReturn(!statusFlags.Parity); }
+void CPU::ret()
+{
+    PC = popWord();
+}
+
+void CPU::rc()
+{
+    doReturn(statusFlags.Carry);
+}
+
+void CPU::rnc()
+{
+    doReturn(!statusFlags.Carry);
+}
+
+void CPU::rz()
+{
+    doReturn(statusFlags.Zero);
+}
+
+void CPU::rnz()
+{
+    doReturn(!statusFlags.Zero);
+}
+
+void CPU::rp()
+{
+    doReturn(!statusFlags.Sign);
+}
+
+void CPU::rm()
+{
+    doReturn(statusFlags.Sign);
+}
+
+void CPU::rpe()
+{
+    doReturn(statusFlags.Parity);
+}
+
+void CPU::rpo()
+{
+    doReturn(!statusFlags.Parity);
+}
 
 void CPU::doJump(bool condition)
 {
@@ -230,15 +314,50 @@ void CPU::doJump(bool condition)
     }
 }
 
-void CPU::jmp() { doJump(true); }
-void CPU::jc()  { doJump(statusFlags.Carry); }
-void CPU::jnc() { doJump(!statusFlags.Carry); }
-void CPU::jz()  { doJump(statusFlags.Zero); }
-void CPU::jnz() { doJump(!statusFlags.Zero); }
-void CPU::jp()  { doJump(!statusFlags.Sign); }
-void CPU::jm()  { doJump(statusFlags.Sign); }
-void CPU::jpe() { doJump(statusFlags.Parity); }
-void CPU::jpo() { doJump(!statusFlags.Parity); }
+void CPU::jmp()
+{
+    doJump(true);
+}
+
+void CPU::jc()
+{
+    doJump(statusFlags.Carry);
+}
+
+void CPU::jnc()
+{
+    doJump(!statusFlags.Carry);
+}
+
+void CPU::jz()
+{
+    doJump(statusFlags.Zero);
+}
+
+void CPU::jnz()
+{
+    doJump(!statusFlags.Zero);
+}
+
+void CPU::jp()
+{
+    doJump(!statusFlags.Sign);
+}
+
+void CPU::jm()
+{
+    doJump(statusFlags.Sign);
+}
+
+void CPU::jpe()
+{
+    doJump(statusFlags.Parity);
+}
+
+void CPU::jpo()
+{
+    doJump(!statusFlags.Parity);
+}
 
 void CPU::in()
 {
@@ -533,32 +652,125 @@ void CPU::dcrM()
     setHalfCarrySub(before, 1, val);
 }
 
-void CPU::addR() { alu_add(getReg8(currentOpcode & 0x7)); }
-void CPU::adcR() { alu_adc(getReg8(currentOpcode & 0x7)); }
-void CPU::subR() { alu_sub(getReg8(currentOpcode & 0x7)); }
-void CPU::sbbR() { alu_sbb(getReg8(currentOpcode & 0x7)); }
-void CPU::anaR() { alu_and(getReg8(currentOpcode & 0x7)); }
-void CPU::xraR() { alu_xor(getReg8(currentOpcode & 0x7)); }
-void CPU::oraR() { alu_or (getReg8(currentOpcode & 0x7)); }
-void CPU::cmpR() { alu_cmp(getReg8(currentOpcode & 0x7)); }
+void CPU::addR()
+{
+    alu_add(getReg8(currentOpcode & 0x7));
+}
 
-void CPU::addM() { alu_add(bus.readByte(HL)); }
-void CPU::adcM() { alu_adc(bus.readByte(HL)); }
-void CPU::subM() { alu_sub(bus.readByte(HL)); }
-void CPU::sbbM() { alu_sbb(bus.readByte(HL)); }
-void CPU::anaM() { alu_and(bus.readByte(HL)); }
-void CPU::xraM() { alu_xor(bus.readByte(HL)); }
-void CPU::oraM() { alu_or (bus.readByte(HL)); }
-void CPU::cmpM() { alu_cmp(bus.readByte(HL)); }
+void CPU::adcR()
+{
+    alu_adc(getReg8(currentOpcode & 0x7));
+}
 
-void CPU::adi() { alu_add(fetchByte()); }
-void CPU::aci() { alu_adc(fetchByte()); }
-void CPU::sui() { alu_sub(fetchByte()); }
-void CPU::sbi() { alu_sbb(fetchByte()); }
-void CPU::ani() { alu_and(fetchByte()); }
-void CPU::xri() { alu_xor(fetchByte()); }
-void CPU::ori() { alu_or (fetchByte()); }
-void CPU::cpi() { alu_cmp(fetchByte()); }
+void CPU::subR()
+{
+    alu_sub(getReg8(currentOpcode & 0x7));
+}
+
+void CPU::sbbR()
+{
+    alu_sbb(getReg8(currentOpcode & 0x7));
+}
+
+void CPU::anaR()
+{
+    alu_and(getReg8(currentOpcode & 0x7));
+}
+
+void CPU::xraR()
+{
+    alu_xor(getReg8(currentOpcode & 0x7));
+}
+
+void CPU::oraR()
+{
+    alu_or (getReg8(currentOpcode & 0x7));
+}
+
+void CPU::cmpR()
+{
+    alu_cmp(getReg8(currentOpcode & 0x7));
+}
+
+void CPU::addM()
+{
+    alu_add(bus.readByte(HL));
+}
+
+void CPU::adcM()
+{
+    alu_adc(bus.readByte(HL));
+}
+
+void CPU::subM()
+{
+    alu_sub(bus.readByte(HL));
+}
+
+void CPU::sbbM()
+{
+    alu_sbb(bus.readByte(HL));
+}
+
+void CPU::anaM()
+{
+    alu_and(bus.readByte(HL));
+}
+
+void CPU::xraM()
+{
+    alu_xor(bus.readByte(HL));
+}
+
+void CPU::oraM()
+{
+    alu_or (bus.readByte(HL));
+}
+
+void CPU::cmpM()
+{
+    alu_cmp(bus.readByte(HL));
+}
+
+void CPU::adi()
+{
+    alu_add(fetchByte());
+}
+
+void CPU::aci()
+{
+    alu_adc(fetchByte());
+}
+
+void CPU::sui()
+{
+    alu_sub(fetchByte());
+}
+
+void CPU::sbi()
+{
+    alu_sbb(fetchByte());
+}
+
+void CPU::ani()
+{
+    alu_and(fetchByte());
+}
+
+void CPU::xri()
+{
+    alu_xor(fetchByte());
+}
+
+void CPU::ori()
+{
+    alu_or (fetchByte());
+}
+
+void CPU::cpi()
+{
+    alu_cmp(fetchByte());
+}
 
 void CPU::rlc()
 {
@@ -588,15 +800,45 @@ void CPU::rar()
     A = (A >> 1) | (old_cf << 7);
 }
 
-void CPU::inxBC() { ++BC; }
-void CPU::inxDE() { ++DE; }
-void CPU::inxHL() { ++HL; }
-void CPU::inxSP() { ++SP; }
+void CPU::inxBC()
+{
+    ++BC;
+}
 
-void CPU::dcxBC() { --BC; }
-void CPU::dcxDE() { --DE; }
-void CPU::dcxHL() { --HL; }
-void CPU::dcxSP() { --SP; }
+void CPU::inxDE()
+{
+    ++DE;
+}
+
+void CPU::inxHL()
+{
+    ++HL;
+}
+
+void CPU::inxSP()
+{
+    ++SP;
+}
+
+void CPU::dcxBC()
+{
+    --BC;
+}
+
+void CPU::dcxDE()
+{
+    --DE;
+}
+
+void CPU::dcxHL()
+{
+    --HL;
+}
+
+void CPU::dcxSP()
+{
+    --SP;
+}
 
 void CPU::shld()
 {
@@ -612,9 +854,20 @@ void CPU::lhld()
     HL = bus.readWord(addr);
 }
 
-void CPU::cma() { A = ~A; }
-void CPU::stc() { statusFlags.Carry = 1; }
-void CPU::cmc() { statusFlags.Carry = !statusFlags.Carry; }
+void CPU::cma()
+{
+    A = ~A;
+}
+
+void CPU::stc()
+{
+    statusFlags.Carry = 1;
+}
+
+void CPU::cmc()
+{
+    statusFlags.Carry = !statusFlags.Carry;
+}
 
 void CPU::daa()
 {
@@ -644,11 +897,25 @@ void CPU::rst()
     PC = rst_address;
 }
 
-void CPU::ei()  { systemFlags.interruptEnabled = true; }
-void CPU::di()  { systemFlags.interruptEnabled = false; }
-void CPU::hlt() { systemFlags.halted = true; }
+void CPU::ei()
+{
+    systemFlags.interruptEnabled = true;
+}
 
-void CPU::nop() { /* do nothing */ }
+void CPU::di()
+{
+    systemFlags.interruptEnabled = false;
+}
+
+void CPU::hlt()
+{
+    systemFlags.halted = true;
+}
+
+void CPU::nop()
+{
+    return;
+}
 
 
 const CPU::Instruction CPU::OPCODE_TABLE[256] =
