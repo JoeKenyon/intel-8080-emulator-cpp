@@ -1,0 +1,7 @@
+AllUnitTests 4 0.00356939
+ALU Opcodes - Arithmetic and Logic Operations 7 0.00150717
+Move Opcodes - Data Transfer and Stack Frames 7 0.00135434
+System Opcodes - Branching and Control Flow 7 0.00134535
+CPU Diagnostic Test ROM 0 0
+---
+CPU Diagnostic Test ROM
