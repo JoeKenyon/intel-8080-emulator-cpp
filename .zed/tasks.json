@@ -1,8 +1,0 @@
-[
-    {
-        "label": "CMake: Auto Build & Run",
-        "command": "cmake -B build -S . && cmake --build build && ./build/intel-8080-emulator-cpp",
-        "allow_concurrent_runs": true,
-        "use_new_terminal": false,
-    },
-]

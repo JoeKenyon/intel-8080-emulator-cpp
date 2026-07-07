@@ -1,3 +1,0 @@
-/Users/joekenyon/Desktop/intel-8080-emulator-cpp/build/_deps/sdl2-subbuild/CMakeFiles/sdl2-populate.dir
-/Users/joekenyon/Desktop/intel-8080-emulator-cpp/build/_deps/sdl2-subbuild/CMakeFiles/edit_cache.dir
-/Users/joekenyon/Desktop/intel-8080-emulator-cpp/build/_deps/sdl2-subbuild/CMakeFiles/rebuild_cache.dir
