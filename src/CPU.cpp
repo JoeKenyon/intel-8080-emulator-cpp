@@ -1,4 +1,4 @@
-#include <iostream>
+#include <cstddef>
 #include <utility>
 #include "CPU.h"
 
@@ -18,6 +18,300 @@ CPU::CPU(IBus& b) : bus(b)
     systemFlags.interruptEnabled = false;
     systemFlags.halted = false;
     m_extraCycles = 0;
+}
+
+bool CPU::evaluateCondition(uint8_t condCode)
+{
+    switch (condCode)
+    {
+        case 0: return !statusFlags.Zero;    // nz (not zero)
+        case 1: return statusFlags.Zero;     // z  (zero)
+        case 2: return !statusFlags.Carry;   // nc (no carry)
+        case 3: return statusFlags.Carry;    // c  (carry)
+        case 4: return !statusFlags.Parity;  // po (parity odd)
+        case 5: return statusFlags.Parity;   // pe (parity even)
+        case 6: return !statusFlags.Sign;    // p  (positive)
+        case 7: return statusFlags.Sign;     // m  (minus)
+        default: return false;
+    }
+}
+
+void CPU::jump()
+{
+    uint16_t addr = fetchWord();
+
+    // 0xc3 is the only unconditional jump in this cluster
+    bool isConditional = (currentOpcode != 0xC3);
+    uint8_t conditionCode = (currentOpcode >> 3) & 0x07;
+
+    if (!isConditional || evaluateCondition(conditionCode))
+    {
+        PC = addr;
+    }
+}
+
+void CPU::call()
+{
+    uint16_t addr = fetchWord();
+
+    // 0xcd is the unconditional call
+    bool isConditional = (currentOpcode != 0xCD);
+    uint8_t conditionCode = (currentOpcode >> 3) & 0x07;
+
+    if (!isConditional || evaluateCondition(conditionCode))
+    {
+        pushWord(PC);
+        PC = addr;
+
+        // branch taken costs extra
+        if (isConditional) m_extraCycles = 6;
+    }
+}
+
+void CPU::ret()
+{
+    // 0xc9 is the unconditional return
+    bool isConditional = (currentOpcode != 0xC9);
+    uint8_t conditionCode = (currentOpcode >> 3) & 0x07;
+
+    if (!isConditional || evaluateCondition(conditionCode))
+    {
+        PC = popWord();
+        if (isConditional) m_extraCycles = 6;
+    }
+}
+
+// handles all push operations
+void CPU::push()
+{
+    // bits 4 and 5 determine the target register pair
+    uint8_t pairCode = (currentOpcode >> 4) & 0x03;
+    pushWord(getReg16(pairCode, true));
+}
+
+// handles all pop operations
+void CPU::pop()
+{
+    // pop the word first, then route it to the right pair
+    uint8_t pairCode = (currentOpcode >> 4) & 0x03;
+    uint16_t val = popWord();
+    setReg16(pairCode, val, true);
+}
+
+void CPU::lxi()
+{
+    // grab bits 4 and 5 to figure out where this word is going
+    uint8_t pairCode = (currentOpcode >> 4) & 0x03;
+    uint16_t val = fetchWord();
+    setReg16(pairCode, val);
+}
+
+// handles sta, lda, shld, and lhld
+void CPU::directStoreLoad()
+{
+    // all four instructions fetch a 16-bit memory address first
+    uint16_t addr = fetchWord();
+
+    // bit 3 tells us if we are reading (load) or writing (store)
+    bool isLoad = (currentOpcode & 0x08) != 0;
+
+    // bit 4 tells us if we are targeting the accumulator or the hl pair
+    bool isAccumulator = (currentOpcode & 0x10) != 0;
+
+    if (isAccumulator)
+    {
+        if (isLoad) A = bus.readByte(addr);   // lda
+        else bus.writeByte(addr, A);   // sta
+    }
+    else
+    {
+        if (isLoad) HL = bus.readWord(addr); // lhld
+        else bus.writeWord(addr, HL); // shld
+    }
+}
+
+// handles stax b, stax d, ldax b, ldax d
+void CPU::indirectStoreLoad()
+{
+    // grab the register pair code from bits 4 and 5
+    // 0 = bc, 1 = de
+    uint8_t pairCode = (currentOpcode >> 4) & 0x03;
+
+    // bit 3 tells us if we are reading (load) or writing (store)
+    bool isLoad = (currentOpcode & 0x08) != 0;
+
+    // fetch the memory address from that register pair
+    uint16_t addr = getReg16(pairCode);
+
+    // ldax: load memory into accumulator
+    if (isLoad) A = bus.readByte(addr);
+    // stax: store accumulator into memory
+    else bus.writeByte(addr, A);
+}
+
+void CPU::dad()
+{
+    // extract pair code (0=bc, 1=de, 2=hl, 3=sp)
+    uint8_t pairCode = (currentOpcode >> 4) & 0x03;
+    uint16_t regPair = getReg16(pairCode);
+
+    // 16-bit addition
+    uint32_t res = static_cast<uint32_t>(HL) + regPair;
+
+    // update carry flag (bit 16 of the result)
+    statusFlags.Carry = (res > 0xFFFF) ? 1 : 0;
+
+    // update hl
+    HL = static_cast<uint16_t>(res & 0xffff);
+}
+
+void CPU::inr()
+{
+    // extract target register code from bits 3-5
+    uint8_t regCode = (currentOpcode >> 3) & 0x07;
+
+    // are we incrementing some
+    // value in memory or a register
+    bool fromMem = (regCode == 6);
+
+    uint8_t val = 0;
+
+    if(fromMem) val = bus.readByte(HL);
+    else val = getReg8(regCode);
+
+    uint8_t before = val;
+    val++;
+
+    // set flags based on the increment
+    setHalfCarryAdd(before, 1, val);
+    setZeroFlag(val);
+    setSignFlag(val);
+    setParityFlag(val);
+
+    if(fromMem) bus.writeByte(HL, val);
+    else setReg8(regCode, val);
+}
+
+void CPU::dcr()
+{
+    // extract target register code from bits 3-5
+    uint8_t regCode = (currentOpcode >> 3) & 0x07;
+
+    // are we decrementing some
+    // value in memory or a register
+    bool fromMem = (regCode == 6);
+
+    uint8_t val = 0;
+
+    if(fromMem) val = bus.readByte(HL);
+    else val = getReg8(regCode);
+
+    uint8_t before = val;
+    val--;
+
+    // set flags based on the decrement
+    setHalfCarrySub(before, 1, val);
+    setZeroFlag(val);
+    setSignFlag(val);
+    setParityFlag(val);
+
+    if(fromMem) bus.writeByte(HL, val);
+    else setReg8(regCode, val);
+}
+
+void CPU::mvi()
+{
+    // extract destination (bits 3-5)
+    uint8_t destCode = (currentOpcode >> 3) & 0x07;
+
+    // grab the immediate value from the instruction stream
+    uint8_t val = fetchByte();
+
+    // write to memory at hl
+    if (destCode == 6) bus.writeByte(HL, val);
+    // write directly to register
+    else setReg8(destCode, val);
+}
+
+void CPU::mov()
+{
+    // extract destination (bits 3-5) and source (bits 0-2)
+    uint8_t destCode = (currentOpcode >> 3) & 0x07;
+    uint8_t srcCode  = currentOpcode & 0x07;
+
+    // memory write
+    if (destCode == 6) bus.writeByte(HL, getReg8(srcCode));
+    // memory read
+    else if (srcCode == 6) setReg8(destCode, bus.readByte(HL));
+    // pure register copy
+    else setReg8(destCode, getReg8(srcCode));
+}
+
+void CPU::inx()
+{
+    // grab the register pair code from bits 4 and 5
+    uint8_t pairCode = (currentOpcode >> 4) & 0x03;
+
+    // read the pair (defaults to SP for pair 3)
+    // increment and write back
+    uint16_t val = getReg16(pairCode) + 1;
+    setReg16(pairCode, val);
+}
+
+void CPU::dcx()
+{
+    // grab the register pair code from bits 4 and 5
+    uint8_t pairCode = (currentOpcode >> 4) & 0x03;
+
+    // read the pair (defaults to SP for pair 3)
+    // decrement and write back
+    uint16_t val = getReg16(pairCode) - 1;
+    setReg16(pairCode, val);
+}
+
+void CPU::alu_(uint8_t opType, uint8_t operand)
+{
+    switch (opType)
+    {
+        case 0: alu_add(operand); break;
+        case 1: alu_adc(operand); break;
+        case 2: alu_sub(operand); break;
+        case 3: alu_sbb(operand); break;
+        case 4: alu_and(operand); break;
+        case 5: alu_xor(operand); break;
+        case 6: alu_or (operand); break;
+        case 7: alu_cmp(operand); break;
+    }
+}
+
+void CPU::alu()
+{
+    // bits 0-2 tell us where the data is coming from
+    uint8_t srcCode = currentOpcode & 0x07;
+    uint8_t operand = 0;
+
+    // are we operating on memory or registers
+    if (srcCode == 6) operand = bus.readByte(HL);
+    // registers
+    else operand = getReg8(srcCode);
+
+    // bits 3-5 tell us exactly which math operation to run
+    uint8_t opType = (currentOpcode >> 3) & 0x07;
+
+    // hand off to shared helper
+    alu_(opType, operand);
+}
+
+void CPU::aluImmediate()
+{
+    // grab the byte from the program stream
+    uint8_t operand = fetchByte();
+
+    // extracts math operation from bits 3-5
+    uint8_t opType = (currentOpcode >> 3) & 0x07;
+
+    // hand off to shared helper
+    alu_(opType, operand);
 }
 
 void CPU::requestInterrupt(uint8_t vector)
@@ -40,24 +334,9 @@ void CPU::requestInterrupt(uint8_t vector)
     PC = vector;
 }
 
-int CPU::executeInstruction()
+uint8_t CPU::getReg8(uint8_t code)
 {
-    uint8_t opcode = fetchByte(); // PC is now (currentPC + 1)
-    currentOpcode = opcode;       // field-decoded handlers (MOV/INR/ALU/RST) read this
-    const Instruction& instr = OPCODE_TABLE[opcode];
-
-    // reset extra cycles
-    m_extraCycles = 0;
-
-    // call the handler
-    (this->*instr.handler)();
-
-    return instr.cycles  + m_extraCycles;
-}
-
-uint8_t& CPU::getReg8(uint8_t code)
-{
-    switch (code & 0x7)
+    switch (code)
     {
         case 0: return B;
         case 1: return C;
@@ -67,6 +346,55 @@ uint8_t& CPU::getReg8(uint8_t code)
         case 5: return L;
         case 7: return A;
         default: return A; // Code 6 is M, handled by specific M helpers
+    }
+}
+
+void CPU::setReg8(uint8_t code, uint8_t val)
+{
+    switch (code)
+    {
+        case 0: B = val; break;
+        case 1: C = val; break;
+        case 2: D = val; break;
+        case 3: E = val; break;
+        case 4: H = val; break;
+        case 5: L = val; break;
+        case 7: A = val; break;
+    }
+}
+
+uint16_t CPU::getReg16(uint8_t code, bool stackOp)
+{
+    switch (code)
+    {
+        case 0: return BC;
+        case 1: return DE;
+        case 2: return HL;
+        case 3: return (stackOp) ? PSW : SP;
+        default: return 0;
+    }
+}
+
+void CPU::setReg16(uint8_t code, uint16_t val, bool stackOp)
+{
+    switch (code)
+    {
+        case 0: BC = val; break;
+        case 1: DE = val; break;
+        case 2: HL = val; break;
+        case 3:
+            if (stackOp)
+            {
+                PSW = val;
+                statusFlags._one   = 1;
+                statusFlags._zero1 = 0;
+                statusFlags._zero2 = 0;
+            }
+            else
+            {
+                SP = val;
+            }
+            break;
     }
 }
 
@@ -181,184 +509,6 @@ uint16_t CPU::popWord()
     return (high << 8) | low;
 }
 
-// centralized call logic
-void CPU::doCall(bool condition)
-{
-    // fetch the target address using the word helper
-    // this moves the pc forward by 2 bytes regardless of the jump
-    uint16_t addr = fetchWord();
-
-    // if the condition is met, perform the call
-    if (condition)
-    {
-        // save the return spot and jump to the target
-        pushWord(PC);
-        PC = addr;
-        // conditionals add 6 cycles apparently
-        m_extraCycles = 6;
-    }
-}
-
-void CPU::call()
-{
-    uint16_t addr = fetchWord();
-    pushWord(PC); PC = addr;
-}
-
-void CPU::cc()
-{
-    doCall(statusFlags.Carry);
-}
-
-void CPU::cnc()
-{
-    doCall(!statusFlags.Carry);
-}
-
-void CPU::cz()
-{
-    doCall(statusFlags.Zero);
-}
-
-void CPU::cnz()
-{
-    doCall(!statusFlags.Zero);
-}
-
-void CPU::cp()
-{
-    doCall(!statusFlags.Sign);
-}
-
-void CPU::cm()
-{
-    doCall(statusFlags.Sign);
-}
-
-void CPU::cpe()
-{
-    doCall(statusFlags.Parity);
-}
-
-void CPU::cpo()
-{
-    doCall(!statusFlags.Parity);
-}
-
-void CPU::doReturn(bool condition)
-{
-    // if the condition is met, pop the return address
-    if (condition)
-    {
-        PC = popWord();
-        // conditionals add 6 cycles apparently
-        m_extraCycles = 6;
-    }
-}
-
-void CPU::ret()
-{
-    PC = popWord();
-}
-
-void CPU::rc()
-{
-    doReturn(statusFlags.Carry);
-}
-
-void CPU::rnc()
-{
-    doReturn(!statusFlags.Carry);
-}
-
-void CPU::rz()
-{
-    doReturn(statusFlags.Zero);
-}
-
-void CPU::rnz()
-{
-    doReturn(!statusFlags.Zero);
-}
-
-void CPU::rp()
-{
-    doReturn(!statusFlags.Sign);
-}
-
-void CPU::rm()
-{
-    doReturn(statusFlags.Sign);
-}
-
-void CPU::rpe()
-{
-    doReturn(statusFlags.Parity);
-}
-
-void CPU::rpo()
-{
-    doReturn(!statusFlags.Parity);
-}
-
-void CPU::doJump(bool condition)
-{
-    // grab the jump address regardless of condition
-    // this moves the pc forward by 2 bytes (3 total including opcode)
-    uint16_t addr = fetchWord();
-
-    // if the condition is met, perform the jump
-    if (condition)
-    {
-        PC = addr;
-    }
-}
-
-void CPU::jmp()
-{
-    doJump(true);
-}
-
-void CPU::jc()
-{
-    doJump(statusFlags.Carry);
-}
-
-void CPU::jnc()
-{
-    doJump(!statusFlags.Carry);
-}
-
-void CPU::jz()
-{
-    doJump(statusFlags.Zero);
-}
-
-void CPU::jnz()
-{
-    doJump(!statusFlags.Zero);
-}
-
-void CPU::jp()
-{
-    doJump(!statusFlags.Sign);
-}
-
-void CPU::jm()
-{
-    doJump(statusFlags.Sign);
-}
-
-void CPU::jpe()
-{
-    doJump(statusFlags.Parity);
-}
-
-void CPU::jpo()
-{
-    doJump(!statusFlags.Parity);
-}
-
 void CPU::in()
 {
     // grab the port number from the next byte
@@ -375,98 +525,6 @@ void CPU::out()
 
     // write the accumulator to the port via the bus
     bus.writePort(port, A);
-}
-
-void CPU::lxiBC()
-{
-    // fetchword handles the 16-bit read and advances pc
-    BC = fetchWord();
-}
-
-void CPU::lxiDE()
-{
-    DE = fetchWord();
-}
-
-void CPU::lxiHL()
-{
-    HL = fetchWord();
-}
-
-void CPU::lxiSP()
-{
-    // stack pointer is already 16-bit
-    SP = fetchWord();
-}
-
-void CPU::pushBC()
-{
-    pushWord(BC);
-}
-
-void CPU::pushDE()
-{
-    pushWord(DE);
-}
-
-void CPU::pushHL()
-{
-    pushWord(HL);
-}
-
-void CPU::pushPSW()
-{
-    // update the fixed status bits in the flags struct
-    statusFlags._zero1 = 0;
-    statusFlags._zero2 = 0;
-    statusFlags._one   = 1;
-
-    // push the whole pair (a + statusFlags.psw) automatically
-    pushWord(PSW);
-}
-
-void CPU::popBC()
-{
-    BC = popWord();
-}
-
-void CPU::popDE()
-{
-    DE = popWord();
-
-}
-void CPU::popHL()
-{
-    HL = popWord();
-}
-
-void CPU::popPSW()
-{
-    // pop the word directly into the psw pair (a + statusFlags.psw)
-    PSW = popWord();
-
-    // restore the fixed status bits that might have been overwritten
-    statusFlags._zero1 = 0;
-    statusFlags._zero2 = 0;
-    statusFlags._one   = 1;
-}
-
-void CPU::sta()
-{
-    // grab the destination address from the stream
-    uint16_t addr = fetchWord();
-
-    // write the accumulator to memory
-    bus.writeByte(addr, A);
-}
-
-void CPU::lda()
-{
-    // grab the source address from the stream
-    uint16_t addr = fetchWord();
-
-    // load the accumulator from memory
-    A = bus.readByte(addr);
 }
 
 void CPU::xchg()
@@ -496,362 +554,42 @@ void CPU::pchl()
     PC = HL;
 }
 
-void CPU::dadBC()
+void CPU::rotate()
 {
-    // 16-bit addition
-    uint32_t res = (uint32_t)HL + BC;
-
-    // update carry flag (bit 16 of the result)
-    statusFlags.Carry = (res > 0xFFFF) ? 1 : 0;
-
-    // update hl
-    HL = (uint16_t)(res & 0xFFFF);
-}
-
-void CPU::dadDE()
-{
-    // 16-bit addition
-    uint32_t res = (uint32_t)HL + DE;
-
-    // update carry flag (bit 16 of the result)
-    statusFlags.Carry = (res > 0xFFFF) ? 1 : 0;
-
-    // update hl
-    HL = (uint16_t)(res & 0xFFFF);
-}
-
-void CPU::dadHL()
-{
-    // add HL to HL
-    uint32_t res = (uint32_t)HL << 0x1;
-
-    // update carry flag (bit 16 of the result)
-    statusFlags.Carry = (res > 0xFFFF) ? 1 : 0;
-
-    // update hl
-    HL = (uint16_t)(res & 0xFFFF);
-}
-
-void CPU::dadSP()
-{
-    // 16-bit addition
-    uint32_t res = (uint32_t)HL + SP;
-
-    // update carry flag (bit 16 of the result)
-    statusFlags.Carry = (res > 0xFFFF) ? 1 : 0;
-
-    // update hl
-    HL = (uint16_t)(res & 0xFFFF);
-}
-
-void CPU::staxBC()
-{
-    bus.writeByte(BC, A);
-}
-
-void CPU::staxDE()
-{
-    bus.writeByte(DE, A);
-}
-
-void CPU::ldaxBC()
-{
-    A = bus.readByte(BC);
-}
-
-void CPU::ldaxDE()
-{
-    A = bus.readByte(DE);
-}
-
-void CPU::movRegToReg()
-{
-    // mov register to register
-    uint8_t& dest = getReg8((currentOpcode >> 3) & 0x7);
-    uint8_t& src  = getReg8(currentOpcode & 0x7);
-    dest = src;
-}
-
-void CPU::movRegToMem()
-{
-    // mov register to M (memory at HL)
-    uint8_t& src = getReg8(currentOpcode & 0x7);
-    bus.writeByte(HL, src);
-
-}
-
-void CPU::movMemToReg()
-{
-    // mov M to register
-    uint8_t& dest = getReg8((currentOpcode >> 3) & 0x7);
-    dest = bus.readByte(HL);
-}
-
-void CPU::movImmToReg()
-{
-    // move immediate to register
-    // fetchByte() handles the PC increment here
-    uint8_t& dest = getReg8((currentOpcode >> 3) & 0x7);
-    dest = fetchByte();
-}
-
-void CPU::movImmToMem()
-{
-    // move immediate to M (memory at HL)
-    // fetchByte() handles the PC increment here
-    bus.writeByte(HL, fetchByte());
-}
-
-void CPU::inrR()
-{
-    uint8_t& reg = getReg8((currentOpcode >> 3) & 0x7);
-    uint8_t before = reg;
-    reg++;
-
-    setZeroFlag(reg);
-    setSignFlag(reg);
-    setParityFlag(reg);
-    setHalfCarryAdd(before, 1, reg);
-}
-
-void CPU::inrM()
-{
-    uint8_t val = bus.readByte(HL);
-    uint8_t before = val;
-    val++;
-    bus.writeByte(HL, val);
-
-    setZeroFlag(val);
-    setSignFlag(val);
-    setParityFlag(val);
-    setHalfCarryAdd(before, 1, val);
-}
-
-void CPU::dcrR()
-{
-    uint8_t& reg = getReg8((currentOpcode >> 3) & 0x7);
-    uint8_t before = reg;
-    reg--;
-
-    setZeroFlag(reg);
-    setSignFlag(reg);
-    setParityFlag(reg);
-    setHalfCarrySub(before, 1, reg);
-}
-
-void CPU::dcrM()
-{
-    uint8_t val = bus.readByte(HL);
-    uint8_t before = val;
-    val--;
-    bus.writeByte(HL, val);
-
-    setZeroFlag(val);
-    setSignFlag(val);
-    setParityFlag(val);
-    setHalfCarrySub(before, 1, val);
-}
-
-void CPU::addR()
-{
-    alu_add(getReg8(currentOpcode & 0x7));
-}
-
-void CPU::adcR()
-{
-    alu_adc(getReg8(currentOpcode & 0x7));
-}
-
-void CPU::subR()
-{
-    alu_sub(getReg8(currentOpcode & 0x7));
-}
-
-void CPU::sbbR()
-{
-    alu_sbb(getReg8(currentOpcode & 0x7));
-}
-
-void CPU::anaR()
-{
-    alu_and(getReg8(currentOpcode & 0x7));
-}
-
-void CPU::xraR()
-{
-    alu_xor(getReg8(currentOpcode & 0x7));
-}
-
-void CPU::oraR()
-{
-    alu_or (getReg8(currentOpcode & 0x7));
-}
-
-void CPU::cmpR()
-{
-    alu_cmp(getReg8(currentOpcode & 0x7));
-}
-
-void CPU::addM()
-{
-    alu_add(bus.readByte(HL));
-}
-
-void CPU::adcM()
-{
-    alu_adc(bus.readByte(HL));
-}
-
-void CPU::subM()
-{
-    alu_sub(bus.readByte(HL));
-}
-
-void CPU::sbbM()
-{
-    alu_sbb(bus.readByte(HL));
-}
-
-void CPU::anaM()
-{
-    alu_and(bus.readByte(HL));
-}
-
-void CPU::xraM()
-{
-    alu_xor(bus.readByte(HL));
-}
-
-void CPU::oraM()
-{
-    alu_or (bus.readByte(HL));
-}
-
-void CPU::cmpM()
-{
-    alu_cmp(bus.readByte(HL));
-}
-
-void CPU::adi()
-{
-    alu_add(fetchByte());
-}
-
-void CPU::aci()
-{
-    alu_adc(fetchByte());
-}
-
-void CPU::sui()
-{
-    alu_sub(fetchByte());
-}
-
-void CPU::sbi()
-{
-    alu_sbb(fetchByte());
-}
-
-void CPU::ani()
-{
-    alu_and(fetchByte());
-}
-
-void CPU::xri()
-{
-    alu_xor(fetchByte());
-}
-
-void CPU::ori()
-{
-    alu_or (fetchByte());
-}
-
-void CPU::cpi()
-{
-    alu_cmp(fetchByte());
-}
-
-void CPU::rlc()
-{
-    uint8_t cf = (A & 0x80) >> 7;
-    statusFlags.Carry = cf;
-    A = (A << 1) | cf;
-}
-
-void CPU::rrc()
-{
-    uint8_t cf = A & 0x1;
-    statusFlags.Carry = cf;
-    A = (A >> 1) | (cf << 7);
-}
-
-void CPU::ral()
-{
-    uint8_t old_cf = statusFlags.Carry;
-    statusFlags.Carry = (A & 0x80) >> 7;
-    A = (A << 1) | old_cf;
-}
-
-void CPU::rar()
-{
-    uint8_t old_cf = statusFlags.Carry;
-    statusFlags.Carry = A & 0x1;
-    A = (A >> 1) | (old_cf << 7);
-}
-
-void CPU::inxBC()
-{
-    ++BC;
-}
-
-void CPU::inxDE()
-{
-    ++DE;
-}
-
-void CPU::inxHL()
-{
-    ++HL;
-}
-
-void CPU::inxSP()
-{
-    ++SP;
-}
-
-void CPU::dcxBC()
-{
-    --BC;
-}
-
-void CPU::dcxDE()
-{
-    --DE;
-}
-
-void CPU::dcxHL()
-{
-    --HL;
-}
-
-void CPU::dcxSP()
-{
-    --SP;
-}
-
-void CPU::shld()
-{
-    // grab the address, then write the 16-bit value
-    uint16_t addr = fetchWord();
-    bus.writeWord(addr, HL);
-}
-
-void CPU::lhld()
-{
-    // grab the address, then read the 16-bit value
-    uint16_t addr = fetchWord();
-    HL = bus.readWord(addr);
+    // extract rotate type from bits 3 and 4
+    uint8_t rotateType = (currentOpcode >> 3) & 0x03;
+
+    switch (rotateType)
+    {
+        case 0: // rlc (0x07)
+        {
+            uint8_t cf = (A & 0x80) >> 7;
+            statusFlags.Carry = cf;
+            A = (A << 1) | cf;
+            break;
+        }
+        case 1: // rrc (0x0F)
+        {
+            uint8_t cf = A & 0x01;
+            statusFlags.Carry = cf;
+            A = (A >> 1) | (cf << 7);
+            break;
+        }
+        case 2: // ral (0x17)
+        {
+            uint8_t old_cf = statusFlags.Carry;
+            statusFlags.Carry = (A & 0x80) >> 7;
+            A = (A << 1) | old_cf;
+            break;
+        }
+        case 3: // rar (0x1F)
+        {
+            uint8_t old_cf = statusFlags.Carry;
+            statusFlags.Carry = A & 0x01;
+            A = (A >> 1) | (old_cf << 7);
+            break;
+        }
+    }
 }
 
 void CPU::cma()
@@ -917,297 +655,377 @@ void CPU::nop()
     return;
 }
 
-
-const CPU::Instruction CPU::OPCODE_TABLE[256] =
+int CPU::executeInstruction()
 {
-    // [Opcode] = { "Mnemonic", Cycles, &CPU::HandlerMethod }
+    uint8_t opcode = fetchByte(); // PC is now (currentPC + 1)
+    currentOpcode = opcode;
 
-    // 0x00
-    [0x00] = { "NOP",        4,  &CPU::nop },
-    [0x01] = { "LXI B,D16", 10,  &CPU::lxiBC },
-    [0x02] = { "STAX B",     7,  &CPU::staxBC },
-    [0x03] = { "INX B",      5,  &CPU::inxBC },
-    [0x04] = { "INR B",      5,  &CPU::inrR },
-    [0x05] = { "DCR B",      5,  &CPU::dcrR },
-    [0x06] = { "MVI B,D8",   7,  &CPU::movImmToReg },
-    [0x07] = { "RLC",        4,  &CPU::rlc },
-    [0x08] = { "NOP",        4,  &CPU::nop },
-    [0x09] = { "DAD B",     10,  &CPU::dadBC },
-    [0x0A] = { "LDAX B",     7,  &CPU::ldaxBC },
-    [0x0B] = { "DCX B",      5,  &CPU::dcxBC },
-    [0x0C] = { "INR C",      5,  &CPU::inrR },
-    [0x0D] = { "DCR C",      5,  &CPU::dcrR },
-    [0x0E] = { "MVI C,D8",   7,  &CPU::movImmToReg },
-    [0x0F] = { "RRC",        4,  &CPU::rrc },
+    // reset extra cycles
+    m_extraCycles = 0;
 
-    // 0x10
-    [0x10] = { "NOP",    4,  &CPU::nop },
-    [0x11] = { "LXI D", 10,  &CPU::lxiDE },
-    [0x12] = { "STAX D", 7,  &CPU::staxDE },
-    [0x13] = { "INX D",  5,  &CPU::inxDE },
-    [0x14] = { "INR D",  5,  &CPU::inrR },
-    [0x15] = { "DCR D",  5,  &CPU::dcrR },
-    [0x16] = { "MVI D",  7,  &CPU::movImmToReg },
-    [0x17] = { "RAL",    4,  &CPU::ral },
-    [0x18] = { "NOP",    4,  &CPU::nop },
-    [0x19] = { "DAD D", 10,  &CPU::dadDE },
-    [0x1A] = { "LDAX D", 7,  &CPU::ldaxDE },
-    [0x1B] = { "DCX D",  5,  &CPU::dcxDE },
-    [0x1C] = { "INR E",  5,  &CPU::inrR },
-    [0x1D] = { "DCR E",  5,  &CPU::dcrR },
-    [0x1E] = { "MVI E",  7,  &CPU::movImmToReg },
-    [0x1F] = { "RAR",    4,  &CPU::rar },
+    switch(opcode)
+    {
+        case 0x00:
+		case 0x08:
+		case 0x10:
+		case 0x18:
+		case 0x20:
+		case 0x28:
+		case 0x30:
+		case 0x38:
+		    nop();
+			break;
 
-    // 0x20
-    [0x20] = { "NOP",    4,  &CPU::nop },
-    [0x21] = { "LXI H", 10,  &CPU::lxiHL },
-    [0x22] = { "SHLD",  16,  &CPU::shld },
-    [0x23] = { "INX H",  5,  &CPU::inxHL },
-    [0x24] = { "INR H",  5,  &CPU::inrR },
-    [0x25] = { "DCR H",  5,  &CPU::dcrR },
-    [0x26] = { "MVI H",  7,  &CPU::movImmToReg },
-    [0x27] = { "DAA",    4,  &CPU::daa },
-    [0x28] = { "NOP",    4,  &CPU::nop },
-    [0x29] = { "DAD H", 10,  &CPU::dadHL },
-    [0x2A] = { "LHLD",  16,  &CPU::lhld },
-    [0x2B] = { "DCX H",  5,  &CPU::dcxHL },
-    [0x2C] = { "INR L",  5,  &CPU::inrR },
-    [0x2D] = { "DCR L",  5,  &CPU::dcrR },
-    [0x2E] = { "MVI L",  7,  &CPU::movImmToReg },
-    [0x2F] = { "CMA",    4,  &CPU::cma },
+		case 0x04:
+		case 0x14:
+		case 0x24:
+		case 0x0C:
+		case 0x1C:
+		case 0x2C:
+		case 0x3C:
+		case 0x34:
+		    inr();
+			break;
 
-    // 0x30
-    [0x30] = { "NOP",     4,  &CPU::nop },
-    [0x31] = { "LXI SP", 10,  &CPU::lxiSP },
-    [0x32] = { "STA",    13,  &CPU::sta },
-    [0x33] = { "INX SP",  5,  &CPU::inxSP },
-    [0x34] = { "INR M",  10,  &CPU::inrM },
-    [0x35] = { "DCR M",  10,  &CPU::dcrM },
-    [0x36] = { "MVI M",  10,  &CPU::movImmToMem },
-    [0x37] = { "STC",     4,  &CPU::stc },
-    [0x38] = { "NOP",     4,  &CPU::nop },
-    [0x39] = { "DAD SP", 10,  &CPU::dadSP },
-    [0x3A] = { "LDA",    13,  &CPU::lda },
-    [0x3B] = { "DCX SP",  5,  &CPU::dcxSP },
-    [0x3C] = { "INR A",   5,  &CPU::inrR },
-    [0x3D] = { "DCR A",   5,  &CPU::dcrR },
-    [0x3E] = { "MVI A",   7,  &CPU::movImmToReg },
-    [0x3F] = { "CMC",     4,  &CPU::cmc },
+		case 0x05:
+		case 0x15:
+		case 0x25:
+		case 0x0D:
+		case 0x1D:
+		case 0x2D:
+		case 0x3D:
+		case 0x35:
+		    dcr();
+			break;
 
-    // 0x40
-    [0x40] = { "MOV B,B", 5, &CPU::movRegToReg },
-    [0x41] = { "MOV B,C", 5, &CPU::movRegToReg },
-    [0x42] = { "MOV B,D", 5, &CPU::movRegToReg },
-    [0x43] = { "MOV B,E", 5, &CPU::movRegToReg },
-    [0x44] = { "MOV B,H", 5, &CPU::movRegToReg },
-    [0x45] = { "MOV B,L", 5, &CPU::movRegToReg },
-    [0x46] = { "MOV B,M", 7, &CPU::movMemToReg },
-    [0x47] = { "MOV B,A", 5, &CPU::movRegToReg },
-    [0x48] = { "MOV C,B", 5, &CPU::movRegToReg },
-    [0x49] = { "MOV C,C", 5, &CPU::movRegToReg },
-    [0x4A] = { "MOV C,D", 5, &CPU::movRegToReg },
-    [0x4B] = { "MOV C,E", 5, &CPU::movRegToReg },
-    [0x4C] = { "MOV C,H", 5, &CPU::movRegToReg },
-    [0x4D] = { "MOV C,L", 5, &CPU::movRegToReg },
-    [0x4E] = { "MOV C,M", 7, &CPU::movMemToReg },
-    [0x4F] = { "MOV C,A", 5, &CPU::movRegToReg },
+		case 0x0F:
+		case 0x1F:
+		case 0x07:
+		case 0x17:
+			rotate();
+			break;
 
-    // 0x50
-    // [0x50 - 0x57] MOV D, R/M
-    [0x50] = { "MOV D,B", 5, &CPU::movRegToReg },
-    [0x51] = { "MOV D,C", 5, &CPU::movRegToReg },
-    [0x52] = { "MOV D,D", 5, &CPU::movRegToReg },
-    [0x53] = { "MOV D,E", 5, &CPU::movRegToReg },
-    [0x54] = { "MOV D,H", 5, &CPU::movRegToReg },
-    [0x55] = { "MOV D,L", 5, &CPU::movRegToReg },
-    [0x56] = { "MOV D,M", 7, &CPU::movMemToReg },
-    [0x57] = { "MOV D,A", 5, &CPU::movRegToReg },
-    [0x58] = { "MOV E,B", 5, &CPU::movRegToReg },
-    [0x59] = { "MOV E,C", 5, &CPU::movRegToReg },
-    [0x5A] = { "MOV E,D", 5, &CPU::movRegToReg },
-    [0x5B] = { "MOV E,E", 5, &CPU::movRegToReg },
-    [0x5C] = { "MOV E,H", 5, &CPU::movRegToReg },
-    [0x5D] = { "MOV E,L", 5, &CPU::movRegToReg },
-    [0x5E] = { "MOV E,M", 7, &CPU::movMemToReg },
-    [0x5F] = { "MOV E,A", 5, &CPU::movRegToReg },
+		case 0x27:
+			daa();
+			break;
 
-    // 0x60
-    [0x60] = { "MOV H,B", 5,  &CPU::movRegToReg },
-    [0x61] = { "MOV H,C", 5,  &CPU::movRegToReg },
-    [0x62] = { "MOV H,D", 5,  &CPU::movRegToReg },
-    [0x63] = { "MOV H,E", 5,  &CPU::movRegToReg },
-    [0x64] = { "MOV H,H", 5,  &CPU::movRegToReg },
-    [0x65] = { "MOV H,L", 5,  &CPU::movRegToReg },
-    [0x66] = { "MOV H,M", 7,  &CPU::movMemToReg },
-    [0x67] = { "MOV H,A", 5,  &CPU::movRegToReg },
-    [0x68] = { "MOV L,B", 5,  &CPU::movRegToReg },
-    [0x69] = { "MOV L,C", 5,  &CPU::movRegToReg },
-    [0x6A] = { "MOV L,D", 5,  &CPU::movRegToReg },
-    [0x6B] = { "MOV L,E", 5,  &CPU::movRegToReg },
-    [0x6C] = { "MOV L,H", 5,  &CPU::movRegToReg },
-    [0x6D] = { "MOV L,L", 5,  &CPU::movRegToReg },
-    [0x6E] = { "MOV L,M", 7,  &CPU::movMemToReg },
-    [0x6F] = { "MOV L,A", 5,  &CPU::movRegToReg },
+		case 0x32:
+		case 0x3A:
+			directStoreLoad();
+			break;
 
-    // 0x70
-    [0x70] = { "MOV M,B", 7, &CPU::movRegToMem },
-    [0x71] = { "MOV M,C", 7, &CPU::movRegToMem },
-    [0x72] = { "MOV M,D", 7, &CPU::movRegToMem },
-    [0x73] = { "MOV M,E", 7, &CPU::movRegToMem },
-    [0x74] = { "MOV M,H", 7, &CPU::movRegToMem },
-    [0x75] = { "MOV M,L", 7, &CPU::movRegToMem },
-    [0x76] = { "HLT",     5, &CPU::hlt },
-    [0x77] = { "MOV M,A", 7, &CPU::movRegToMem },
-    [0x78] = { "MOV A,B", 5, &CPU::movRegToReg },
-    [0x79] = { "MOV A,C", 5, &CPU::movRegToReg },
-    [0x7A] = { "MOV A,D", 5, &CPU::movRegToReg },
-    [0x7B] = { "MOV A,E", 5, &CPU::movRegToReg },
-    [0x7C] = { "MOV A,H", 5, &CPU::movRegToReg },
-    [0x7D] = { "MOV A,L", 5, &CPU::movRegToReg },
-    [0x7E] = { "MOV A,M", 7, &CPU::movMemToReg },
-    [0x7F] = { "MOV A,A", 5, &CPU::movRegToReg },
+		case 0x2F:
+			cma();
+			break;
 
-    // 0x80
-    [0x80] = { "ADD B", 4, &CPU::addR },
-    [0x81] = { "ADD C", 4, &CPU::addR },
-    [0x82] = { "ADD D", 4, &CPU::addR },
-    [0x83] = { "ADD E", 4, &CPU::addR },
-    [0x84] = { "ADD H", 4, &CPU::addR },
-    [0x85] = { "ADD L", 4, &CPU::addR },
-    [0x86] = { "ADD M", 7, &CPU::addM },
-    [0x87] = { "ADD A", 4, &CPU::addR },
-    [0x88] = { "ADC B", 4, &CPU::adcR },
-    [0x89] = { "ADC C", 4, &CPU::adcR },
-    [0x8A] = { "ADC D", 4, &CPU::adcR },
-    [0x8B] = { "ADC E", 4, &CPU::adcR },
-    [0x8C] = { "ADC H", 4, &CPU::adcR },
-    [0x8D] = { "ADC L", 4, &CPU::adcR },
-    [0x8E] = { "ADC M", 7, &CPU::adcM },
-    [0x8F] = { "ADC A", 4, &CPU::adcR },
+		case 0x37:
+			stc();
+			break;
 
-    // 0x90
-    [0x90] = { "SUB B", 4, &CPU::subR },
-    [0x91] = { "SUB C", 4, &CPU::subR },
-    [0x92] = { "SUB D", 4, &CPU::subR },
-    [0x93] = { "SUB E", 4, &CPU::subR },
-    [0x94] = { "SUB H", 4, &CPU::subR },
-    [0x95] = { "SUB L", 4, &CPU::subR },
-    [0x96] = { "SUB M", 7, &CPU::subM },
-    [0x97] = { "SUB A", 4, &CPU::subR },
-    [0x98] = { "SBB B", 4, &CPU::sbbR },
-    [0x99] = { "SBB C", 4, &CPU::sbbR },
-    [0x9A] = { "SBB D", 4, &CPU::sbbR },
-    [0x9B] = { "SBB E", 4, &CPU::sbbR },
-    [0x9C] = { "SBB H", 4, &CPU::sbbR },
-    [0x9D] = { "SBB L", 4, &CPU::sbbR },
-    [0x9E] = { "SBB M", 7, &CPU::sbbM },
-    [0x9F] = { "SBB A", 4, &CPU::sbbR },
+		case 0x3F:
+			cmc();
+			break;
 
-    // 0xA0
-    [0xA0] = { "ANA B",       4,  &CPU::anaR },
-    [0xA1] = { "ANA C",       4,  &CPU::anaR },
-    [0xA2] = { "ANA D",       4,  &CPU::anaR },
-    [0xA3] = { "ANA E",       4,  &CPU::anaR },
-    [0xA4] = { "ANA H",       4,  &CPU::anaR },
-    [0xA5] = { "ANA L",       4,  &CPU::anaR },
-    [0xA6] = { "ANA M",       7,  &CPU::anaM },
-    [0xA7] = { "ANA A",       4,  &CPU::anaR },
-    [0xA8] = { "XRA B",       4,  &CPU::xraR },
-    [0xA9] = { "XRA C",       4,  &CPU::xraR },
-    [0xAA] = { "XRA D",       4,  &CPU::xraR },
-    [0xAB] = { "XRA E",       4,  &CPU::xraR },
-    [0xAC] = { "XRA H",       4,  &CPU::xraR },
-    [0xAD] = { "XRA L",       4,  &CPU::xraR },
-    [0xAE] = { "XRA M",       7,  &CPU::xraM },
-    [0xAF] = { "XRA A",       4,  &CPU::xraR },
+        case 0x40:
+		case 0x41:
+		case 0x42:
+		case 0x43:
+		case 0x44:
+		case 0x45:
+		case 0x47:
+		case 0x48:
+		case 0x49:
+		case 0x4A:
+		case 0x4B:
+		case 0x4C:
+		case 0x4D:
+		case 0x4F:
+		case 0x50:
+		case 0x51:
+		case 0x52:
+		case 0x53:
+		case 0x54:
+		case 0x55:
+		case 0x57:
+		case 0x58:
+		case 0x59:
+		case 0x5A:
+		case 0x5B:
+		case 0x5C:
+		case 0x5D:
+		case 0x5F:
+		case 0x60:
+		case 0x61:
+		case 0x62:
+		case 0x63:
+		case 0x64:
+		case 0x65:
+		case 0x67:
+		case 0x68:
+		case 0x69:
+		case 0x6A:
+		case 0x6B:
+		case 0x6C:
+		case 0x6D:
+		case 0x6F:
+		case 0x78:
+		case 0x79:
+		case 0x7A:
+		case 0x7B:
+		case 0x7C:
+		case 0x7D:
+		case 0x7F:
+		case 0x70:
+		case 0x71:
+		case 0x72:
+		case 0x73:
+		case 0x74:
+		case 0x75:
+		case 0x77:
+		case 0x46:
+		case 0x4E:
+		case 0x56:
+		case 0x5E:
+		case 0x66:
+		case 0x6E:
+		case 0x7E:
+		    mov();
+			break;
 
-    // 0xB0
-    [0xB0] = { "ORA B",       4,  &CPU::oraR },
-    [0xB1] = { "ORA C",       4,  &CPU::oraR },
-    [0xB2] = { "ORA D",       4,  &CPU::oraR },
-    [0xB3] = { "ORA E",       4,  &CPU::oraR },
-    [0xB4] = { "ORA H",       4,  &CPU::oraR },
-    [0xB5] = { "ORA L",       4,  &CPU::oraR },
-    [0xB6] = { "ORA M",       7,  &CPU::oraM },
-    [0xB7] = { "ORA A",       4,  &CPU::oraR },
-    [0xB8] = { "CMP B",       4,  &CPU::cmpR },
-    [0xB9] = { "CMP C",       4,  &CPU::cmpR },
-    [0xBA] = { "CMP D",       4,  &CPU::cmpR },
-    [0xBB] = { "CMP E",       4,  &CPU::cmpR },
-    [0xBC] = { "CMP H",       4,  &CPU::cmpR },
-    [0xBD] = { "CMP L",       4,  &CPU::cmpR },
-    [0xBE] = { "CMP M",       7,  &CPU::cmpM },
-    [0xBF] = { "CMP A",       4,  &CPU::cmpR },
+		case 0x06:
+		case 0x16:
+		case 0x26:
+		case 0x0E:
+		case 0x1E:
+		case 0x2E:
+		case 0x3E:
+		case 0x36:
+		    mvi();
+			break;
 
-    // 0xC0
-    [0xC0] = { "RNZ",      5,  &CPU::rnz },
-    [0xC1] = { "POP B",   10,  &CPU::popBC },
-    [0xC2] = { "JNZ",     10,  &CPU::jnz },
-    [0xC3] = { "JMP",     10,  &CPU::jmp },
-    [0xC4] = { "CNZ",     11,  &CPU::cnz },
-    [0xC5] = { "PUSH B",  11,  &CPU::pushBC },
-    [0xC6] = { "ADI",      7,  &CPU::adi },
-    [0xC7] = { "RST 0",   11,  &CPU::rst },
-    [0xC8] = { "RZ",       5,  &CPU::rz },
-    [0xC9] = { "RET",     10,  &CPU::ret },
-    [0xCA] = { "JZ",      10,  &CPU::jz },
-    [0xCB] = { "JMP",     10,  &CPU::jmp },
-    [0xCC] = { "CZ",      11,  &CPU::cz },
-    [0xCD] = { "CALL",    17,  &CPU::call },
-    [0xCE] = { "ACI",      7,  &CPU::aci },
-    [0xCF] = { "RST 1",   11,  &CPU::rst },
+		case 0x80:
+		case 0x81:
+		case 0x82:
+		case 0x83:
+		case 0x84:
+		case 0x85:
+		case 0x87:
+		case 0x88:
+		case 0x89:
+		case 0x8A:
+		case 0x8B:
+		case 0x8C:
+		case 0x8D:
+		case 0x8F:
+		case 0x90:
+		case 0x91:
+		case 0x92:
+		case 0x93:
+		case 0x94:
+		case 0x95:
+		case 0x97:
+		case 0x98:
+		case 0x99:
+		case 0x9A:
+		case 0x9B:
+		case 0x9C:
+		case 0x9D:
+		case 0x9F:
+		case 0xA0:
+		case 0xA1:
+		case 0xA2:
+		case 0xA3:
+		case 0xA4:
+		case 0xA5:
+		case 0xA7:
+		case 0xA8:
+		case 0xA9:
+		case 0xAA:
+		case 0xAB:
+		case 0xAC:
+		case 0xAD:
+		case 0xAF:
+		case 0xB0:
+		case 0xB1:
+		case 0xB2:
+		case 0xB3:
+		case 0xB4:
+		case 0xB5:
+		case 0xB7:
+		case 0xB8:
+		case 0xB9:
+		case 0xBA:
+		case 0xBB:
+		case 0xBC:
+		case 0xBD:
+		case 0xBF:
+		case 0x86:
+		case 0x8E:
+		case 0x96:
+		case 0x9E:
+		case 0xA6:
+		case 0xAE:
+		case 0xB6:
+		case 0xBE:
+		    alu();
+			break;
 
-    // 0xD0
-    [0xD0] = { "RNC",         5,  &CPU::rnc },
-    [0xD1] = { "POP D",      10,  &CPU::popDE },
-    [0xD2] = { "JNC A16",    10,  &CPU::jnc },
-    [0xD3] = { "OUT D8",     10,  &CPU::out },
-    [0xD4] = { "CNC A16",    11,  &CPU::cnc },
-    [0xD5] = { "PUSH D",     11,  &CPU::pushDE },
-    [0xD6] = { "SUI D8",      7,  &CPU::sui },
-    [0xD7] = { "RST 2",      11,  &CPU::rst },
-    [0xD8] = { "RC",          5,  &CPU::rc },
-    [0xD9] = { "RET",        10,  &CPU::ret },
-    [0xDA] = { "JC A16",     10,  &CPU::jc },
-    [0xDB] = { "IN D8",      10,  &CPU::in },
-    [0xDC] = { "CC A16",     11,  &CPU::cc },
-    [0xDD] = { "CALL A16",   17,  &CPU::call },
-    [0xDE] = { "SBI D8",      7,  &CPU::sbi },
-    [0xDF] = { "RST 3",      11,  &CPU::rst },
+        case 0xC6:
+        case 0xCE:
+        case 0xD6:
+        case 0xDE:
+        case 0xE6:
+        case 0xEE:
+        case 0xF6:
+        case 0xFE:
+            aluImmediate();
+            break;
 
-    // 0xE0
-    [0xE0] = { "RPO",         5,  &CPU::rpo },
-    [0xE1] = { "POP H",      10,  &CPU::popHL },
-    [0xE2] = { "JPO A16",    10,  &CPU::jpo },
-    [0xE3] = { "XTHL",       18,  &CPU::xthl },
-    [0xE4] = { "CPO A16",    11,  &CPU::cpo },
-    [0xE5] = { "PUSH H",     11,  &CPU::pushHL },
-    [0xE6] = { "ANI D8",      7,  &CPU::ani },
-    [0xE7] = { "RST 4",      11,  &CPU::rst },
-    [0xE8] = { "RPE",         5,  &CPU::rpe },
-    [0xE9] = { "PCHL",        5,  &CPU::pchl },
-    [0xEA] = { "JPE A16",    10,  &CPU::jpe },
-    [0xEB] = { "XCHG",        4,  &CPU::xchg },
-    [0xEC] = { "CPE A16",    11,  &CPU::cpe },
-    [0xED] = { "CALL A16",   17,  &CPU::call },
-    [0xEE] = { "XRI D8",      7,  &CPU::xri },
-    [0xEF] = { "RST 5",      11,  &CPU::rst },
+        case 0xC2:
+		case 0xD2:
+		case 0xE2:
+		case 0xF2:
+		case 0xCA:
+		case 0xDA:
+		case 0xEA:
+		case 0xFA:
+		case 0xC3:
+		case 0xCB:
+		    jump();
+			break;
 
-    // 0xF0
-    [0xF0] = { "RP",          5,  &CPU::rp },
-    [0xF1] = { "POP PSW",    10,  &CPU::popPSW },
-    [0xF2] = { "JP A16",     10,  &CPU::jp },
-    [0xF3] = { "DI",          4,  &CPU::di },
-    [0xF4] = { "CP A16",     11,  &CPU::cp },
-    [0xF5] = { "PUSH PSW",   11,  &CPU::pushPSW },
-    [0xF6] = { "ORI D8",      7,  &CPU::ori },
-    [0xF7] = { "RST 6",      11,  &CPU::rst },
-    [0xF8] = { "RM",          5,  &CPU::rm },
-    [0xF9] = { "SPHL",        5,  &CPU::sphl },
-    [0xFA] = { "JM A16",     10,  &CPU::jm },
-    [0xFB] = { "EI",          4,  &CPU::ei },
-    [0xFC] = { "CM A16",     11,  &CPU::cm },
-    [0xFD] = { "CALL A16",   17,  &CPU::call },
-    [0xFE] = { "CPI D8",      7,  &CPU::cpi },
-    [0xFF] = { "RST 7",      11,  &CPU::rst }
-};
+		case 0xC4:
+		case 0xD4:
+		case 0xE4:
+		case 0xF4:
+		case 0xCC:
+		case 0xDC:
+		case 0xEC:
+		case 0xFC:
+		case 0xCD:
+		case 0xDD:
+		case 0xED:
+		case 0xFD:
+		    call();
+			break;
+		case 0xC0:
+		case 0xD0:
+		case 0xE0:
+		case 0xF0:
+		case 0xC8:
+		case 0xD8:
+		case 0xE8:
+		case 0xF8:
+		case 0xC9:
+		case 0xD9:
+		    ret();
+			break;
+
+		case 0x01:
+		case 0x11:
+		case 0x21:
+		case 0x31:
+			lxi();
+			break;
+
+		case 0x03:
+		case 0x13:
+		case 0x23:
+		case 0x33:
+			inx();
+			break;
+
+		case 0x0B:
+		case 0x1B:
+		case 0x2B:
+		case 0x3B:
+		    dcx();
+			break;
+
+		case 0x09:
+		case 0x19:
+		case 0x29:
+		case 0x39:
+		    dad();
+			break;
+
+		case 0x02:
+		case 0x12:
+		case 0x0A:
+		case 0x1A:
+			indirectStoreLoad();
+			break;
+
+		case 0xC1:
+		case 0xD1:
+		case 0xE1:
+		case 0xF1:
+		    pop();
+			break;
+
+		case 0xC5:
+		case 0xD5:
+		case 0xE5:
+		case 0xF5:
+		    push();
+			break;
+
+		case 0x22:
+		case 0x2A:
+			directStoreLoad();
+			break;
+
+		case 0xE9:
+		    pchl();
+			break;
+
+		case 0xF9:
+		    sphl();
+			break;
+
+		case 0xE3:
+			xthl();
+			break;
+
+		case 0xEB:
+			xchg();
+			break;
+
+		case 0xD3:
+			out();
+			break;
+
+		case 0xDB:
+			in();
+			break;
+
+		case 0xC7:
+		case 0xCF:
+		case 0xD7:
+		case 0xDF:
+		case 0xE7:
+		case 0xEF:
+		case 0xF7:
+		case 0xFF:
+			rst();
+			break;
+
+		case 0xFB:
+			ei();
+			break;
+
+		case 0xF3:
+			di();
+			break;
+
+		case 0x76:
+			hlt();
+			break;
+
+		default:
+			return 1;
+    }
+
+    return base_cycles[opcode]  + m_extraCycles;
+    return 0;
+}

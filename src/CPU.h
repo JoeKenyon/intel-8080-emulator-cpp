@@ -106,8 +106,13 @@ private:
     // (used for conditional CALL/RET, which take longer when the branch fires).
     int m_extraCycles{0};
 
-    // Returns a reference to an 8-bit register (A, B, C, D, E, H, L)
-    uint8_t& getReg8(uint8_t code);
+    // Returns reference to 8-bit register (A, B, C, D, E, H, L)
+    uint8_t getReg8(uint8_t code);
+    void setReg8(uint8_t code, uint8_t val);
+
+    // Returns value to 16bit registers/ registor pairs
+    uint16_t getReg16(uint8_t code, bool stackOp = false);
+    void setReg16(uint8_t code, uint16_t val, bool stackOp = false);
 
     uint8_t  fetchByte(){ return bus.readByte(PC++); }
     void     writeByte(uint16_t addr, uint8_t val) { bus.writeByte(addr, val); }
@@ -123,129 +128,37 @@ private:
     void alu_sbb(uint8_t val);
     void alu_cmp(uint8_t val);
 
-    void pushByte(uint8_t value);
-    uint8_t popByte();
-    void pushWord(uint16_t value);
+    void     pushByte(uint8_t value);
+    uint8_t  popByte();
+    void     pushWord(uint16_t value);
     uint16_t popWord();
-
-    void doCall(bool condition);
-    void call();
-    void cc();
-    void cnc();
-    void cz();
-    void cnz();
-    void cp();
-    void cm();
-    void cpe();
-    void cpo();
-
-    void doReturn(bool condition);
-    void ret();
-    void rc();
-    void rnc();
-    void rz();
-    void rnz();
-    void rp();
-    void rm();
-    void rpe();
-    void rpo();
-
-    void doJump(bool condition);
-    void jmp();
-    void jc();
-    void jnc();
-    void jz();
-    void jnz();
-    void jp();
-    void jm();
-    void jpe();
-    void jpo();
 
     void in();
     void out();
-
-    void lxiBC();
-    void lxiDE();
-    void lxiHL();
-    void lxiSP();
-
-    void pushBC();
-    void pushDE();
-    void pushHL();
-    void pushPSW();
-
-    void popBC();
-    void popDE();
-    void popHL();
-    void popPSW();
-
-    void sta();
-    void lda();
-
+    void jump();
+    void call();
+    void ret();
+    bool evaluateCondition(uint8_t condCode);
+    void lxi();
+    void pop();
+    void push();
+    void directStoreLoad();
+    void indirectStoreLoad();
     void xchg();
     void xthl();
     void sphl();
     void pchl();
-
-    void dadBC();
-    void dadDE();
-    void dadHL();
-    void dadSP();
-
-    void staxBC();
-    void staxDE();
-    void ldaxBC();
-    void ldaxDE();
-
-    void movRegToReg();
-    void movRegToMem();
-    void movMemToReg();
-    void movImmToReg();
-    void movImmToMem();
-
-    void inrR();
-    void inrM();
-    void dcrR();
-    void dcrM();
-
-    void addR();
-    void adcR();
-    void subR();
-    void sbbR();
-    void anaR();
-    void xraR();
-    void oraR();
-    void cmpR();
-    void addM();
-    void adcM();
-    void subM();
-    void sbbM();
-    void anaM();
-    void xraM();
-    void oraM();
-    void cmpM();
-    void adi ();
-    void aci ();
-    void sui ();
-    void sbi ();
-    void ani ();
-    void xri ();
-    void ori ();
-    void cpi ();
-    void rlc();
-    void rrc();
-    void ral();
-    void rar();
-    void inxBC();
-    void inxDE();
-    void inxHL();
-    void inxSP();
-    void dcxBC();
-    void dcxDE();
-    void dcxHL();
-    void dcxSP();
-    void shld();
-    void lhld();
+    void dad();
+    void dcr();
+    void inr();
+    void mov();
+    void mvi();
+    void dcx();
+    void inx();
+    void alu_(uint8_t opType, uint8_t operand);
+    void alu();
+    void aluImmediate();
+    void rotate();
     void cma();
     void stc();
     void cmc();
@@ -255,4 +168,24 @@ private:
     void di();
     void hlt();
     void nop();
+
+    constexpr static const uint8_t  base_cycles[256] = {
+    // x0  x1  x2  x3  x4  x5  x6  x7  x8  x9  xA  xB  xC  xD  xE  xF
+        4, 10,  7,  5,  5,  5,  7,  4,  4, 10,  7,  5,  5,  5,  7,  4, //0x
+        4, 10,  7,  5,  5,  5,  7,  4,  4, 10,  7,  5,  5,  5,  7,  4, //1x
+        4, 10, 16,  5,  5,  5,  7,  4,  4, 10, 16,  5,  5,  5,  7,  4, //2x
+        4, 10, 13,  5, 10, 10, 10,  4,  4, 10, 13,  5,  5,  5,  7,  4, //3x
+        5,  5,  5,  5,  5,  5,  7,  5,  5,  5,  5,  5,  5,  5,  7,  5, //4x
+        5,  5,  5,  5,  5,  5,  7,  5,  5,  5,  5,  5,  5,  5,  7,  5, //5x
+        5,  5,  5,  5,  5,  5,  7,  5,  5,  5,  5,  5,  5,  5,  7,  5, //6x
+        7,  7,  7,  7,  7,  7,  5,  7,  5,  5,  5,  5,  5,  5,  7,  5, //7x
+        4,  4,  4,  4,  4,  4,  7,  4,  4,  4,  4,  4,  4,  4,  7,  4, //8x
+        4,  4,  4,  4,  4,  4,  7,  4,  4,  4,  4,  4,  4,  4,  7,  4, //9x
+        4,  4,  4,  4,  4,  4,  7,  4,  4,  4,  4,  4,  4,  4,  7,  4, //Ax
+        4,  4,  4,  4,  4,  4,  7,  4,  4,  4,  4,  4,  4,  4,  7,  4, //Bx
+        5, 10, 10, 10, 11, 11,  7, 11,  5, 10, 10, 10, 11, 17,  7, 11, //Cx
+        5, 10, 10, 10, 11, 11,  7, 11,  5, 10, 10, 10, 11, 17,  7, 11, //Dx
+        5, 10, 10, 18, 11, 11,  7, 11,  5,  5, 10,  4, 11, 17,  7, 11, //Ex
+        5, 10, 10,  4, 11, 11,  7, 11,  5,  5, 10,  4, 11, 17,  7, 11  //Fx
+    };
 };
