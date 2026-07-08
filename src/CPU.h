@@ -10,8 +10,8 @@ public:
         uint8_t &high, &low;
         RegisterPair(uint8_t& h, uint8_t& l) : high(h), low(l) {}
         void operator=(uint16_t val) { high = (val >> 8) & 0xFF; low = val & 0xFF; }
-        RegisterPair& operator++() { uint16_t val = *this; val++; *this = val; return *this; }
-        RegisterPair& operator--() { uint16_t val = *this; val--; *this = val; return *this; }
+        RegisterPair& operator++() { if (++low == 0) ++high; return *this; }
+        RegisterPair& operator--() { if (low-- == 0) --high; return *this; }
         RegisterPair& operator=(const RegisterPair& other) { high = other.high; low = other.low; return *this; }
         operator uint16_t() const { return (static_cast<uint16_t>(high) << 8) | low;}
     };
@@ -128,6 +128,11 @@ private:
     void alu_sbb(uint8_t val);
     void alu_cmp(uint8_t val);
 
+    using AluOp = void (CPU::*)(uint8_t);
+    static constexpr AluOp aluOps[8] = { &CPU::alu_add, &CPU::alu_adc, &CPU::alu_sub,
+                                         &CPU::alu_sbb, &CPU::alu_and, &CPU::alu_xor,
+                                         &CPU::alu_or,  &CPU::alu_cmp };
+
     void     pushByte(uint8_t value);
     uint8_t  popByte();
     void     pushWord(uint16_t value);
@@ -155,7 +160,6 @@ private:
     void mvi();
     void dcx();
     void inx();
-    void alu_(uint8_t opType, uint8_t operand);
     void alu();
     void aluImmediate();
     void rotate();
@@ -169,7 +173,8 @@ private:
     void hlt();
     void nop();
 
-    constexpr static const uint8_t  base_cycles[256] = {
+    constexpr static const uint8_t  base_cycles[256] =
+    {
     // x0  x1  x2  x3  x4  x5  x6  x7  x8  x9  xA  xB  xC  xD  xE  xF
         4, 10,  7,  5,  5,  5,  7,  4,  4, 10,  7,  5,  5,  5,  7,  4, //0x
         4, 10,  7,  5,  5,  5,  7,  4,  4, 10,  7,  5,  5,  5,  7,  4, //1x

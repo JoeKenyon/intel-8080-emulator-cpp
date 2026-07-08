@@ -169,54 +169,32 @@ void CPU::inr()
 {
     // extract target register code from bits 3-5
     uint8_t regCode = (currentOpcode >> 3) & 0x07;
-
-    // are we incrementing some
-    // value in memory or a register
-    bool fromMem = (regCode == 6);
-
-    uint8_t val = 0;
-
-    if(fromMem) val = bus.readByte(HL);
-    else val = getReg8(regCode);
-
-    uint8_t before = val;
-    val++;
+    uint8_t oldVal = getReg8(regCode);
+    uint8_t newVal = oldVal + 1;
 
     // set flags based on the increment
-    setHalfCarryAdd(before, 1, val);
-    setZeroFlag(val);
-    setSignFlag(val);
-    setParityFlag(val);
+    setHalfCarryAdd(oldVal, 1, newVal);
+    setZeroFlag(newVal);
+    setSignFlag(newVal);
+    setParityFlag(newVal);
 
-    if(fromMem) bus.writeByte(HL, val);
-    else setReg8(regCode, val);
+    setReg8(regCode, newVal);
 }
 
 void CPU::dcr()
 {
     // extract target register code from bits 3-5
     uint8_t regCode = (currentOpcode >> 3) & 0x07;
-
-    // are we decrementing some
-    // value in memory or a register
-    bool fromMem = (regCode == 6);
-
-    uint8_t val = 0;
-
-    if(fromMem) val = bus.readByte(HL);
-    else val = getReg8(regCode);
-
-    uint8_t before = val;
-    val--;
+    uint8_t oldVal = getReg8(regCode);
+    uint8_t newVal = oldVal - 1;
 
     // set flags based on the decrement
-    setHalfCarrySub(before, 1, val);
-    setZeroFlag(val);
-    setSignFlag(val);
-    setParityFlag(val);
+    setHalfCarrySub(oldVal, 1, newVal);
+    setZeroFlag(newVal);
+    setSignFlag(newVal);
+    setParityFlag(newVal);
 
-    if(fromMem) bus.writeByte(HL, val);
-    else setReg8(regCode, val);
+    setReg8(regCode, newVal);
 }
 
 void CPU::mvi()
@@ -224,13 +202,8 @@ void CPU::mvi()
     // extract destination (bits 3-5)
     uint8_t destCode = (currentOpcode >> 3) & 0x07;
 
-    // grab the immediate value from the instruction stream
-    uint8_t val = fetchByte();
-
-    // write to memory at hl
-    if (destCode == 6) bus.writeByte(HL, val);
-    // write directly to register
-    else setReg8(destCode, val);
+    // grab and write the immediate value from the instruction stream
+    setReg8(destCode, fetchByte());
 }
 
 void CPU::mov()
@@ -238,13 +211,7 @@ void CPU::mov()
     // extract destination (bits 3-5) and source (bits 0-2)
     uint8_t destCode = (currentOpcode >> 3) & 0x07;
     uint8_t srcCode  = currentOpcode & 0x07;
-
-    // memory write
-    if (destCode == 6) bus.writeByte(HL, getReg8(srcCode));
-    // memory read
-    else if (srcCode == 6) setReg8(destCode, bus.readByte(HL));
-    // pure register copy
-    else setReg8(destCode, getReg8(srcCode));
+    setReg8(destCode, getReg8(srcCode));
 }
 
 void CPU::inx()
@@ -254,8 +221,7 @@ void CPU::inx()
 
     // read the pair (defaults to SP for pair 3)
     // increment and write back
-    uint16_t val = getReg16(pairCode) + 1;
-    setReg16(pairCode, val);
+    setReg16(pairCode, getReg16(pairCode) + 1);
 }
 
 void CPU::dcx()
@@ -265,23 +231,7 @@ void CPU::dcx()
 
     // read the pair (defaults to SP for pair 3)
     // decrement and write back
-    uint16_t val = getReg16(pairCode) - 1;
-    setReg16(pairCode, val);
-}
-
-void CPU::alu_(uint8_t opType, uint8_t operand)
-{
-    switch (opType)
-    {
-        case 0: alu_add(operand); break;
-        case 1: alu_adc(operand); break;
-        case 2: alu_sub(operand); break;
-        case 3: alu_sbb(operand); break;
-        case 4: alu_and(operand); break;
-        case 5: alu_xor(operand); break;
-        case 6: alu_or (operand); break;
-        case 7: alu_cmp(operand); break;
-    }
+    setReg16(pairCode, getReg16(pairCode) - 1);
 }
 
 void CPU::alu()
@@ -290,16 +240,14 @@ void CPU::alu()
     uint8_t srcCode = currentOpcode & 0x07;
     uint8_t operand = 0;
 
-    // are we operating on memory or registers
-    if (srcCode == 6) operand = bus.readByte(HL);
-    // registers
-    else operand = getReg8(srcCode);
+    // get the operand
+    operand = getReg8(srcCode);
 
     // bits 3-5 tell us exactly which math operation to run
     uint8_t opType = (currentOpcode >> 3) & 0x07;
 
     // hand off to shared helper
-    alu_(opType, operand);
+    (this->*aluOps[opType])(operand);
 }
 
 void CPU::aluImmediate()
@@ -311,7 +259,7 @@ void CPU::aluImmediate()
     uint8_t opType = (currentOpcode >> 3) & 0x07;
 
     // hand off to shared helper
-    alu_(opType, operand);
+    (this->*aluOps[opType])(operand);
 }
 
 void CPU::requestInterrupt(uint8_t vector)
@@ -344,22 +292,24 @@ uint8_t CPU::getReg8(uint8_t code)
         case 3: return E;
         case 4: return H;
         case 5: return L;
+        case 6: return bus.readByte(HL);
         case 7: return A;
-        default: return A; // Code 6 is M, handled by specific M helpers
     }
+    return 0xFF; // unreachable, silences warning
 }
 
 void CPU::setReg8(uint8_t code, uint8_t val)
 {
     switch (code)
     {
-        case 0: B = val; break;
-        case 1: C = val; break;
-        case 2: D = val; break;
-        case 3: E = val; break;
-        case 4: H = val; break;
-        case 5: L = val; break;
-        case 7: A = val; break;
+        case 0: B = val; return;
+        case 1: C = val; return;
+        case 2: D = val; return;
+        case 3: E = val; return;
+        case 4: H = val; return;
+        case 5: L = val; return;
+        case 6: bus.writeByte(HL, val); return;
+        case 7: A = val; return;
     }
 }
 
@@ -370,18 +320,18 @@ uint16_t CPU::getReg16(uint8_t code, bool stackOp)
         case 0: return BC;
         case 1: return DE;
         case 2: return HL;
-        case 3: return (stackOp) ? PSW : SP;
-        default: return 0;
+        case 3: return stackOp ? static_cast<uint16_t>(PSW) : SP;
     }
+    return 0xFFFF; // unreachable
 }
 
 void CPU::setReg16(uint8_t code, uint16_t val, bool stackOp)
 {
     switch (code)
     {
-        case 0: BC = val; break;
-        case 1: DE = val; break;
-        case 2: HL = val; break;
+        case 0: BC = val; return;
+        case 1: DE = val; return;
+        case 2: HL = val; return;
         case 3:
             if (stackOp)
             {
@@ -394,7 +344,7 @@ void CPU::setReg16(uint8_t code, uint16_t val, bool stackOp)
             {
                 SP = val;
             }
-            break;
+            return;
     }
 }
 

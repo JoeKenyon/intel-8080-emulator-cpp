@@ -1,33 +1,7 @@
 #include "Emulator.h"
 #include <iostream>
 
-int main()
-{
-    Emulator arcadeMachine;
 
-    // load the four rom chunks into contiguous memory
-    if (!arcadeMachine.loadROM("./roms/invaders.h", 0x0000) ||
-        !arcadeMachine.loadROM("./roms/invaders.g", 0x0800) ||
-        !arcadeMachine.loadROM("./roms/invaders.f", 0x1000) ||
-        !arcadeMachine.loadROM("./roms/invaders.e", 0x1800))
-    {
-        std::cerr << "fatal error: required rom files missing.\n";
-        return 1;
-    }
-
-    if (!arcadeMachine.boot("Space Invaders", 3))
-    {
-        std::cerr << "fatal error: failed to initialize display hardware.\n";
-        return 1;
-    }
-
-    // start the hardware clock
-    arcadeMachine.run();
-
-    return 0;
-}
-
-/*
 #include "CPU.h"
 #include <fstream>
 #include <iostream>
@@ -154,4 +128,3 @@ int main()
     }
     return 0;
 }
-*/
