@@ -48,6 +48,12 @@ public:
     uint16_t SP = 0;
 
     RegisterPair PSW{A, statusFlags.packed};
+    void setZSP(uint8_t value) noexcept
+    {
+        setZeroFlag(value);
+        setSignFlag(value);
+        setParityFlag(value);
+    }
 
     class IBus
     {

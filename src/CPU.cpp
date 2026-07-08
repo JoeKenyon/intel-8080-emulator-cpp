@@ -174,9 +174,7 @@ void CPU::inr()
 
     // set flags based on the increment
     setHalfCarryAdd(oldVal, 1, newVal);
-    setZeroFlag(newVal);
-    setSignFlag(newVal);
-    setParityFlag(newVal);
+    setZSP(newVal);
 
     setReg8(regCode, newVal);
 }
@@ -354,9 +352,7 @@ void CPU::alu_and(uint8_t val)
     statusFlags.AuxCarry = ((A | val) & 0x08) != 0;
     statusFlags.Carry = 0;
     A &= val;
-    setZeroFlag(A);
-    setSignFlag(A);
-    setParityFlag(A);
+    setZSP(A);
 }
 
 void CPU::alu_xor(uint8_t val)
@@ -364,9 +360,7 @@ void CPU::alu_xor(uint8_t val)
     statusFlags.AuxCarry = 0;
     statusFlags.Carry = 0;
     A ^= val;
-    setZeroFlag(A);
-    setSignFlag(A);
-    setParityFlag(A);
+    setZSP(A);
 }
 
 void CPU::alu_or(uint8_t val)
@@ -374,9 +368,7 @@ void CPU::alu_or(uint8_t val)
     statusFlags.AuxCarry = 0;
     statusFlags.Carry = 0;
     A |= val;
-    setZeroFlag(A);
-    setSignFlag(A);
-    setParityFlag(A);
+    setZSP(A);
 }
 
 // Arithmetic Operations
@@ -386,9 +378,7 @@ void CPU::alu_add(uint8_t val)
     setHalfCarryAdd(A, val, tmp);
     setCarryFlag(tmp);
     A = (uint8_t)(tmp & 0xFF);
-    setZeroFlag(A);
-    setSignFlag(A);
-    setParityFlag(A);
+    setZSP(A);
 }
 
 void CPU::alu_adc(uint8_t val)
@@ -397,9 +387,7 @@ void CPU::alu_adc(uint8_t val)
     setHalfCarryAdd(A, val, tmp);
     setCarryFlag(tmp);
     A = (uint8_t)(tmp & 0xFF);
-    setZeroFlag(A);
-    setSignFlag(A);
-    setParityFlag(A);
+    setZSP(A);
 }
 
 void CPU::alu_sub(uint8_t val)
@@ -408,9 +396,7 @@ void CPU::alu_sub(uint8_t val)
     setHalfCarrySub(A, val, (uint8_t)(tmp & 0xFF));
     setCarryFlag(tmp); // Note: 8080 Carry flag is set on borrow
     A = (uint8_t)(tmp & 0xFF);
-    setZeroFlag(A);
-    setSignFlag(A);
-    setParityFlag(A);
+    setZSP(A);
 }
 
 void CPU::alu_sbb(uint8_t val)
@@ -419,9 +405,7 @@ void CPU::alu_sbb(uint8_t val)
     setHalfCarrySub(A, val, (uint8_t)(tmp & 0xFF));
     setCarryFlag(tmp);
     A = (uint8_t)(tmp & 0xFF);
-    setZeroFlag(A);
-    setSignFlag(A);
-    setParityFlag(A);
+    setZSP(A);
 }
 
 void CPU::alu_cmp(uint8_t val)
@@ -429,9 +413,7 @@ void CPU::alu_cmp(uint8_t val)
     uint16_t tmp = A - val;
     setHalfCarrySub(A, val, (uint8_t)(tmp & 0xFF));
     setCarryFlag(tmp);
-    setZeroFlag((uint8_t)(tmp & 0xFF));
-    setSignFlag((uint8_t)(tmp & 0xFF));
-    setParityFlag((uint8_t)(tmp & 0xFF));
+    setZSP((uint8_t)(tmp & 0xFF));
 }
 
 void CPU::pushByte(uint8_t value)
