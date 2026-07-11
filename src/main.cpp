@@ -1,4 +1,22 @@
 #include "Emulator.h"
+#include "SpaceInvaders.h"
+
+int main()
+{
+    Emulator emulator(SpaceInvaders::buildConfig());
+
+    if (!emulator.boot())
+    {
+        return 1;
+    }
+
+    emulator.run();
+    return 0;
+}
+
+
+/*
+#include "Emulator.h"
 #include <iostream>
 
 
@@ -128,3 +146,4 @@ int main()
     }
     return 0;
 }
+*/

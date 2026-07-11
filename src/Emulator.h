@@ -1,21 +1,23 @@
 #pragma once
 #include "CPU.h"
-#include "MachineBus.h"
 #include "Display.h"
+#include "MachineBus.h"
+#include "MachineConfig.h"
 
 class Emulator
 {
 public:
-    Emulator() noexcept;
-    bool loadROM(const char* filepath, uint16_t offset) noexcept;
-    bool boot(const char* windowTitle, int windowScale) noexcept;
+    explicit Emulator(MachineConfig config) noexcept;
+
+    bool boot() noexcept;
     void run() noexcept;
 
 private:
-    // 2 MHz cpu / 60 frames per second / 2 half-frames
-    static constexpr int CYCLES_PER_HALF_FRAME = 16666;
+    bool loadROMs() noexcept;
+    void applyStaticPortBits() noexcept;
 
-    MachineBus m_bus;
-    CPU m_cpu;
-    Display m_display;
+    MachineConfig m_config;
+    MachineBus    m_bus;
+    CPU           m_cpu;
+    Display       m_display;
 };

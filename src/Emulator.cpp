@@ -1,93 +1,99 @@
 #include "Emulator.h"
-#include <iostream>
-#include <fstream>
+#include <algorithm>
 #include <chrono>
+#include <fstream>
+#include <iostream>
 #include <thread>
 
-Emulator::Emulator() noexcept : m_cpu(m_bus)
+Emulator::Emulator(MachineConfig config) noexcept
+    : m_config(std::move(config)), m_bus(m_config), m_cpu(m_bus)
 {
 }
 
-bool Emulator::loadROM(const char* filepath, uint16_t offset) noexcept
+bool Emulator::loadROMs() noexcept
 {
-    std::ifstream file(filepath, std::ios::binary | std::ios::ate);
-
-    if (!file.is_open())
+    for (const auto& rom : m_config.roms)
     {
-        std::cerr << "failed to locate rom: " << filepath << "\n";
-        return false;
-    }
+        std::ifstream file(rom.path, std::ios::binary | std::ios::ate);
+        if (!file.is_open())
+        {
+            std::cerr << "failed to locate rom: " << rom.path << "\n";
+            return false;
+        }
 
-    std::streamsize size = file.tellg();
-    file.seekg(0, std::ios::beg);
+        std::streamsize size = file.tellg();
+        file.seekg(0, std::ios::beg);
 
-    // read directly into the machine bus memory array
-    if (!file.read(reinterpret_cast<char*>(&m_bus.memory[offset]), size))
-    {
-        return false;
+        if (!file.read(reinterpret_cast<char*>(&m_bus.memory[rom.loadAddress]), size))
+        {
+            std::cerr << "failed to read rom: " << rom.path << "\n";
+            return false;
+        }
     }
     return true;
 }
 
-bool Emulator::boot(const char* windowTitle, int windowScale) noexcept
+void Emulator::applyStaticPortBits() noexcept
 {
-    // kick off the display layer
-    if (!m_display.initialize(windowTitle, windowScale))
+    for (const auto& [port, mask] : m_config.staticPortBitsSet)
     {
-        return false;
+        m_bus.ports[port] |= mask;
     }
+    for (const auto& [port, mask] : m_config.staticPortBitsClear)
+    {
+        m_bus.ports[port] &= static_cast<uint8_t>(~mask);
+    }
+}
 
-    return true;
+bool Emulator::boot() noexcept
+{
+    if (!loadROMs()) return false;
+    return m_display.initialize(m_config);
 }
 
 void Emulator::run() noexcept
 {
+    const long cyclesPerFrame = m_config.cyclesPerSecond / m_config.framesPerSecond;
+    const auto targetFrameTime = std::chrono::microseconds(1'000'000 / m_config.framesPerSecond);
+
+    // interrupts must fire in the order they occur within the frame
+    auto interrupts = m_config.interrupts;
+    std::sort(interrupts.begin(), interrupts.end(),
+              [](const FrameInterrupt& a, const FrameInterrupt& b) { return a.cyclesIntoFrame < b.cyclesIntoFrame; });
+
     auto frameStartTime = std::chrono::high_resolution_clock::now();
 
     while (m_display.isOpen())
     {
-        // poll sdl events and map them to the hardware ports
-        m_display.handleInput(m_bus.ports);
+        m_display.handleInput(m_bus.ports, m_config.keyBindings);
+        applyStaticPortBits();
 
-        // half frame 1: upper screen operations
-        int cyclesRun = 0;
-        while (cyclesRun < CYCLES_PER_HALF_FRAME)
+        long cyclesRun = 0;
+        size_t nextInterrupt = 0;
+
+        while (cyclesRun < cyclesPerFrame)
         {
             cyclesRun += m_cpu.executeInstruction();
+
+            while (nextInterrupt < interrupts.size() && cyclesRun >= interrupts[nextInterrupt].cyclesIntoFrame)
+            {
+                if (m_cpu.systemFlags.interruptEnabled)
+                {
+                    m_cpu.requestInterrupt(interrupts[nextInterrupt].vector);
+                }
+                nextInterrupt++;
+            }
         }
 
-        // fire the mid-screen hardware interrupt (rst 1)
-        if (m_cpu.systemFlags.interruptEnabled)
-        {
-            m_cpu.requestInterrupt(0x08);
-        }
-
-        // half frame 2: lower screen operations
-        cyclesRun = 0;
-        while (cyclesRun < CYCLES_PER_HALF_FRAME)
-        {
-            cyclesRun += m_cpu.executeInstruction();
-        }
-
-        // fire the end-of-screen hardware interrupt (rst 2)
-        if (m_cpu.systemFlags.interruptEnabled)
-        {
-            m_cpu.requestInterrupt(0x10);
-        }
-
-        // push the vram to the sdl display
         m_display.render(m_bus.memory);
 
-        // 60hz frame rate limiter
-        auto frameEndTime = std::chrono::high_resolution_clock::now();
-        auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(frameEndTime - frameStartTime);
-        constexpr std::chrono::microseconds targetFrameTime(16666);
-
+        // frame rate limiter
+        auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::high_resolution_clock::now() - frameStartTime);
         if (elapsed < targetFrameTime)
         {
             std::this_thread::sleep_for(targetFrameTime - elapsed);
         }
-
         frameStartTime = std::chrono::high_resolution_clock::now();
     }
 }

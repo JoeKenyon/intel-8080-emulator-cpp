@@ -87,8 +87,9 @@ public:
     void requestInterrupt(uint8_t vector);
 
 private:
-    IBus& bus;
+    IBus& m_bus;
 
+public:
     struct Instruction
     {
         std::string_view mnemonic; // Lightweight, non-allocating string view
@@ -98,6 +99,8 @@ private:
 
     static const Instruction OPCODE_TABLE[256];
 
+private:
+
     void setZeroFlag    (uint8_t value) { statusFlags.Zero = (value == 0); }
     void setSignFlag    (uint8_t value) { statusFlags.Sign = (value & 0x80) != 0; }
     void setParityFlag  (uint8_t value) { statusFlags.Parity = calculateParity(value); }
@@ -106,7 +109,7 @@ private:
     void setHalfCarrySub(uint8_t a, uint8_t b, uint8_t result) { statusFlags.AuxCarry = ((a ^ (uint8_t)(~b) ^ result) & 0x10) != 0;}
     bool calculateParity(uint8_t value) { value ^= value >> 4; value ^= value >> 2; value ^= value >> 1; return !(value & 1);}
 
-    uint8_t currentOpcode;
+    uint8_t m_currentOpcode;
 
     // Extra cycles a handler adds on top of the OPCODE_TABLE base cost
     // (used for conditional CALL/RET, which take longer when the branch fires).
@@ -120,10 +123,10 @@ private:
     uint16_t getReg16(uint8_t code, bool stackOp = false);
     void setReg16(uint8_t code, uint16_t val, bool stackOp = false);
 
-    uint8_t  fetchByte(){ return bus.readByte(PC++); }
-    void     writeByte(uint16_t addr, uint8_t val) { bus.writeByte(addr, val); }
+    uint8_t  fetchByte(){ return m_bus.readByte(PC++); }
+    void     writeByte(uint16_t addr, uint8_t val) { m_bus.writeByte(addr, val); }
     uint16_t fetchWord() { uint8_t low = fetchByte(); uint8_t high = fetchByte(); return (static_cast<uint16_t>(high) << 8) | low;}
-    void     writeWord(uint16_t addr, uint16_t val) { bus.writeByte(addr, val & 0xFF); bus.writeByte(addr + 1, val >> 8);}
+    void     writeWord(uint16_t addr, uint16_t val) { m_bus.writeByte(addr, val & 0xFF); m_bus.writeByte(addr + 1, val >> 8);}
 
     void alu_and(uint8_t val);
     void alu_xor(uint8_t val);
@@ -178,25 +181,4 @@ private:
     void di();
     void hlt();
     void nop();
-
-    constexpr static const uint8_t  base_cycles[256] =
-    {
-    // x0  x1  x2  x3  x4  x5  x6  x7  x8  x9  xA  xB  xC  xD  xE  xF
-        4, 10,  7,  5,  5,  5,  7,  4,  4, 10,  7,  5,  5,  5,  7,  4, //0x
-        4, 10,  7,  5,  5,  5,  7,  4,  4, 10,  7,  5,  5,  5,  7,  4, //1x
-        4, 10, 16,  5,  5,  5,  7,  4,  4, 10, 16,  5,  5,  5,  7,  4, //2x
-        4, 10, 13,  5, 10, 10, 10,  4,  4, 10, 13,  5,  5,  5,  7,  4, //3x
-        5,  5,  5,  5,  5,  5,  7,  5,  5,  5,  5,  5,  5,  5,  7,  5, //4x
-        5,  5,  5,  5,  5,  5,  7,  5,  5,  5,  5,  5,  5,  5,  7,  5, //5x
-        5,  5,  5,  5,  5,  5,  7,  5,  5,  5,  5,  5,  5,  5,  7,  5, //6x
-        7,  7,  7,  7,  7,  7,  5,  7,  5,  5,  5,  5,  5,  5,  7,  5, //7x
-        4,  4,  4,  4,  4,  4,  7,  4,  4,  4,  4,  4,  4,  4,  7,  4, //8x
-        4,  4,  4,  4,  4,  4,  7,  4,  4,  4,  4,  4,  4,  4,  7,  4, //9x
-        4,  4,  4,  4,  4,  4,  7,  4,  4,  4,  4,  4,  4,  4,  7,  4, //Ax
-        4,  4,  4,  4,  4,  4,  7,  4,  4,  4,  4,  4,  4,  4,  7,  4, //Bx
-        5, 10, 10, 10, 11, 11,  7, 11,  5, 10, 10, 10, 11, 17,  7, 11, //Cx
-        5, 10, 10, 10, 11, 11,  7, 11,  5, 10, 10, 10, 11, 17,  7, 11, //Dx
-        5, 10, 10, 18, 11, 11,  7, 11,  5,  5, 10,  4, 11, 17,  7, 11, //Ex
-        5, 10, 10,  4, 11, 11,  7, 11,  5,  5, 10,  4, 11, 17,  7, 11  //Fx
-    };
 };
