@@ -1,25 +1,42 @@
-# Intel 8080 Emulator (Space Invaders)
+# Taito 8080 Emulator
 
-A cycle-accurate Intel 8080 CPU emulator written in C++20, targeting Space
-Invaders as the primary test ROM, with SDL2 for video and input.
+A cycle-accurate Intel 8080 emulator in C++20, targeting Taito 8080 Hardware,
+the arcade board Taito developed in 1977, most famous for Space Invaders and
+also used by later derivatives like Lunar Rescue. SDL2 handles video and
+input.
 
 <img src="space_invaders.png" alt="running space invaders" width="350"/>
 
+This isn't a single game emulator. The core (CPU, bus, display) is shared
+across the whole board family, and each game gets added as a data driven
+config rather than hardcoded into the emulator itself.
+
+## Currently supported
+
+- Space Invaders (Taito/Midway, 1978)
+- Lunar Rescue (Taito, 1979)
+
 ## Features
 
-- Full 8080 instruction set via a function-pointer dispatch table (`OPCODE_TABLE`)
-- Real flag computation (Zero, Sign, Parity, Carry, Aux Carry) with hardware-accurate
-  half-carry/borrow logic for ALU ops
-- Interrupt support (`RST` vector servicing, enable/disable, halt)
-- Space Invaders hardware: VRAM rendering, bit-shift register I/O (ports 2/3/4),
-  keyboard-mapped input ports
-- CP/M BDOS intercept mode for running the standard 8080 CPU test suite
-  (`TST8080`, `CPUTEST`, `8080PRE`, `8080EXM`)
+- Full 8080 instruction set via a 256 entry dispatch table (`OPCODE_TABLE`),
+  each entry storing mnemonic, cycle cost, and handler pointer
+- Real flag computation (Zero, Sign, Parity, Carry, Aux Carry) with
+  hardware accurate half carry/borrow logic for ALU ops
+- Interrupt support (RST vector servicing, enable/disable, halt)
+- Data driven `MachineConfig` describing ROM layout, VRAM/screen info,
+  frame timing and interrupts, key bindings, static port bits, and any
+  custom hardware hooks per game
+- Shift register hardware emulated for both supported games (ports 2/3/4),
+  matching the board's bit shifter used for fast sprite blits
+- A standalone CPU correctness harness validated against the standard
+  8080 diagnostic ROMs (`TST8080`, `CPUTEST`, `8080PRE`, `8080EXM`), plus
+  differential fuzzing against a second independent 8080 implementation
+  with zero flag mismatches
 
 ## Build
 
-Requires CMake ≥ 3.15 and a C++20 compiler. SDL2 is fetched automatically via
-`FetchContent`.
+Requires CMake >= 3.15 and a C++20 compiler. SDL2 is fetched automatically
+via `FetchContent`.
 
 ```bash
 mkdir build && cd build
@@ -27,96 +44,89 @@ cmake ..
 cmake --build .
 ```
 
-Place Space Invaders ROM files (`invaders.h`, `.g`, `.f`, `.e`) in `roms/` at
-the project root before running.
+Drop the relevant ROM files into `roms/<game>/` before running, e.g.
+`roms/invaders/invaders.h/.g/.f/.e` or `roms/lrescue/lrescue.1` through
+`.6`. Pick which game to boot by pointing `main.cpp` at the right
+`buildConfig()` (see Adding a new game below for how this works).
 
 ```bash
-./intel-8080-emulator-cpp
+./taito8080-emu
 ```
 
 ## Controls
 
-| Key       | Action           |
-|-----------|------------------|
-| C         | Insert coin      |
-| Enter     | Player 1 start   |
-| Space     | Fire             |
-| Left/Right| Move             |
-| Esc       | Quit             |
+| Key        | Action           |
+|------------|------------------|
+| C          | Insert coin      |
+| Enter      | Player 1 start   |
+| Space      | Fire             |
+| Left/Right | Move             |
+| Esc        | Quit             |
 
 ## Architecture
 
 ```
-Emulator          owns Bus, Intel8080, Display; runs the 60Hz frame loop
-├── Bus           64KB memory + 256 I/O ports; Space Invaders shift register
-│   └── Memory    raw byte array read/write
-├── Intel8080     registers, flags, interrupt state, step()/dispatch
-│   └── OPCODE_TABLE   256-entry table of { mnemonic, cycles, handler }
-└── Display       SDL2 window/renderer, VRAM → texture, keyboard → ports
+Emulator          owns MachineBus, CPU, Display; runs the frame loop
+├── MachineBus    64KB memory + 256 I/O ports, implements CPU::IBus
+│                 routes custom port reads/writes to MachineConfig hooks
+├── CPU           registers, flags, interrupt state, executeInstruction()
+│   └── OPCODE_TABLE   256 entry table of { mnemonic, cycles, handler }
+├── MachineConfig  per game data: ROMs, screen/VRAM, timing, interrupts,
+│                 key bindings, static port bits, custom hardware callbacks
+└── Display       SDL2 window/renderer, VRAM to texture, keyboard to ports
 ```
 
-CPU logic is split across:
-- `Intel8080.cpp` - core fetch/decode/dispatch loop, register decode helper
-- `Opcodes_ALU.cpp` - arithmetic/logic instructions and flag helpers
-- `Opcodes_Move.cpp` - data movement, stack, register pair ops
-- `Opcodes_System.cpp` - jumps, calls, returns, RST, interrupts, I/O
+`CPU` only talks to memory and I/O through the abstract `IBus` interface,
+so it has zero knowledge of SDL2, ROM layout, or which game is running.
+`MachineBus` is the concrete `IBus` for arcade hardware, and it defers
+anything machine specific (like the shift register) to the callbacks set
+on `MachineConfig`.
 
-Each opcode handler is a single member function driven by bitfields decoded
-from the raw opcode byte at runtime (e.g. `op_MOV`, `op_AluReg`), rather than
-one function per opcode.
+### Why MachineConfig instead of just hardcoding Space Invaders?
 
-## Port I/O
+"Taito 8080" describes a hardware generation, not one fixed board. Even
+between the two games currently supported, ROM layout, shift register
+wiring, and static port bits (dip switches, coin door, tilt sensor) all
+differ. Hardcoding one game would make the emulator's name a lie the
+moment a second game got added. `MachineConfig` is the boundary between
+what's actually constant across the family (CPU, bus protocol, display
+pipeline) and what varies per board (memory map, peripherals, controls).
 
-`Bus` dispatches `IN`/`OUT` through per-port handler tables (`std::function`,
-indexed by port number) instead of a hardcoded switch. `setupPortHandlers()`
-wires up the Space Invaders shift-register hardware:
+## CPU correctness
 
-- `OUT 2` - sets the shift offset
-- `OUT 4` - shifts a new byte into the 16-bit shift register
-- `IN 3`  - reads the shift register at the current offset
+The core is checked against the standard 8080 diagnostic suite:
 
-Ports with no registered handler fall through to the raw `ports[]` array -
-this is how plain input ports (1, 2 for buttons/DIP switches) work, since
-`Display::handleInput` writes directly into that array.
+- `TST8080.COM`
+- `CPUTEST.COM`
+- `8080PRE.COM`
+- `8080EXM.COM`
 
-External code can register or override a port at runtime via
-`Bus::setOutHandler` / `Bus::setInHandler`, without `Bus` needing to know
-who's calling. The CPU test harness (see below) uses this to hook ports 0
-and 1 for its own purposes, without touching `Bus` at all.
-
-## CPU test mode
-
-Build with `CONFIG_RUN_TEST_MODE` defined to run the classic 8080 diagnostic
-ROMs (`TST8080.COM`, `CPUTEST.COM`, `8080PRE.COM`, `8080EXM.COM`) instead of
-booting the Space Invaders hardware.
-
-The harness injects real instructions at the two addresses CP/M test ROMs
-call into, rather than intercepting on `PC`:
-
-- `0x0000`: `OUT 0,A` - the ROM's own exit signal
-- `0x0005`: `OUT 1,A` then `RET` - stands in for a BDOS call
-
-`Bus::setOutHandler` hooks port 0 to set a `testFinished` flag, and port 1
-to print based on whatever the ROM left in registers C/D/E (function 2 =
-print character, function 9 = print `$`-terminated string)
-Because these are real instructions, `cpu.step()` charges their actual cost from `OPCODE_TABLE`, so the main loop
-is just:
-
-```cpp
-while (!testFinished)
-{
-    cycles_n += cpu.step();
-}
-```
-Cycle counts are printed against known-good expected values for each ROM at the end of each run.
+Cycle counts are compared against known good totals for each ROM. The ALU
+has also been differentially fuzzed against a second, independent 8080
+implementation ([superzazu/8080](https://github.com/superzazu/8080)) with
+zero flag mismatches found.
 
 <img src="testing.png" alt="test results" width="450"/>
 
-## Status / known gaps
+## Adding a new game
 
-- Memory access is routed through `Bus`, but a full `Bus` abstraction
-  (for supporting machines beyond Space Invaders) is not yet in place.
+1. Write a new header (e.g. `MyGame.h`) with a `buildConfig()` function
+   returning a filled out `MachineConfig`.
+2. Fill in ROM images/addresses, screen/VRAM info, timing, interrupts,
+   key bindings, and static port bits.
+3. If the board has custom hardware beyond simple port bits (shift
+   register, sound board, etc), implement `customPortRead`/`customPortWrite`.
+4. Point `main.cpp` at the new config.
+
+No changes to `CPU`, `MachineBus`, `Display`, or `Emulator` should be
+needed unless the new board introduces something genuinely different,
+like a second CPU, non-bitmap video, or analog/positional input. At that
+point it's probably its own project rather than a `MachineConfig` entry
+here.
 
 ## Roadmap
 
-- [ ] Additional ROM target support
+- [ ] Add another game on the existing hardware model (Balloon Bomber or
+      Ozma Wars are the easiest next targets)
+- [ ] Gun Fight support (would require extending `MachineConfig` for
+      analog/positional input and no shift register)

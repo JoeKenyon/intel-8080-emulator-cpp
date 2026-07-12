@@ -22,7 +22,7 @@ FetchContent_MakeAvailable(SDL2)
 # Core Emulator Executable
 # ───────────────────────────────
 add_executable(intel-8080-emulator-cpp
-src/CPU.cpp src/CPU.h src/Display.cpp src/Display.h src/Emulator.cpp src/Emulator.h src/MachineBus.h src/MachineConfig.h src/main.cpp src/SpaceInvaders.h
+src/CPU.cpp src/CPU.h src/Display.cpp src/Display.h src/Emulator.cpp src/Emulator.h src/MachineBus.h src/MachineConfig.h src/main.cpp src/SpaceInvaders.h src/LRescue.h
 )
 
 target_include_directories(intel-8080-emulator-cpp PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)

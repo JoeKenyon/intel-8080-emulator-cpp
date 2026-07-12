@@ -1,9 +1,10 @@
 #include "Emulator.h"
 #include "SpaceInvaders.h"
+#include "LRescue.h"
 
 int main()
 {
-    Emulator emulator(SpaceInvaders::buildConfig());
+    Emulator emulator(LunarRescue::buildConfig());
 
     if (!emulator.boot())
     {

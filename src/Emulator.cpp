@@ -48,6 +48,7 @@ void Emulator::applyStaticPortBits() noexcept
 bool Emulator::boot() noexcept
 {
     if (!loadROMs()) return false;
+
     return m_display.initialize(m_config);
 }
 
@@ -79,9 +80,17 @@ void Emulator::run() noexcept
             {
                 if (m_cpu.systemFlags.interruptEnabled)
                 {
+                    // cpu is ready! push the vector and move to the next one
                     m_cpu.requestInterrupt(interrupts[nextInterrupt].vector);
+                    nextInterrupt++; 
                 }
-                nextInterrupt++;
+                else
+                {
+                    // hardware is holding the interrupt line high, but cpu is ignoring it.
+                    // break out of this interrupt check and execute another instruction.
+                    // we will try again next cycle!
+                    break; 
+                }
             }
         }
 
