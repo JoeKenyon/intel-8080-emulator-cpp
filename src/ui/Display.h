@@ -3,7 +3,7 @@
 #include <array>
 #include <cstdint>
 #include <vector>
-#include "MachineConfig.h"
+#include "../core/MachineConfig.h"
 
 class Display
 {

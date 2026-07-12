@@ -1,17 +1,60 @@
-#include "Emulator.h"
-#include "SpaceInvaders.h"
-#include "LRescue.h"
+#include "./core/Emulator.h"
+#include "./games/GameRegistry.h"
+#include "./ui/MenuScreen.h"
+#include <vector>
+#include <string>
 
 int main()
 {
-    Emulator emulator(LunarRescue::buildConfig());
+    const auto entries = getMenuEntries();
 
-    if (!emulator.boot())
+    std::vector<std::string> labels;
+    labels.reserve(entries.size());
+    for (const auto& entry : entries)
     {
-        return 1;
+        labels.push_back(entry.name);
     }
 
-    emulator.run();
+    // wrap the main flow in a loop so it keeps returning to the menu
+    while (true)
+    {
+        int choice = -1;
+        {
+            // scoped so the menu window and its sdl context are torn down
+            // before a game or diagnostic gets to open its own window
+            MenuScreen menu;
+            if (!menu.initialize())
+            {
+                return 1;
+            }
+            choice = menu.run(labels);
+        }
+
+        // user quit from the menu screen directly
+        if (choice < 0)
+        {
+            break;
+        }
+
+        const GameEntry& chosen = entries[choice];
+
+        if (chosen.kind == EntryKind::Diagnostic)
+        {
+            chosen.runAction();
+        }
+        else
+        {
+            Emulator emulator(chosen.buildConfig());
+
+            if (emulator.boot())
+            {
+                // the emulator will block here until it naturally quits
+                // once it returns, the loop restarts and shows the menu again
+                emulator.run();
+            }
+        }
+    }
+
     return 0;
 }
 

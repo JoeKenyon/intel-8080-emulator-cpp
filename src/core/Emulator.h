@@ -1,6 +1,6 @@
 #pragma once
 #include "CPU.h"
-#include "Display.h"
+#include "../ui/Display.h"
 #include "MachineBus.h"
 #include "MachineConfig.h"
 

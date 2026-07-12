@@ -63,6 +63,7 @@ void Display::handleInput(std::array<uint8_t, 256>& ports, const std::vector<Key
         if (event.key.keysym.sym == SDLK_ESCAPE)
         {
             if (isDown) m_isOpen = false;
+            
             continue;
         }
 

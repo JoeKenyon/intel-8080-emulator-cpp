@@ -1,8 +1,9 @@
-#include "MachineBus.h"
+#include "LRescue.h"
+#include "../core/MachineBus.h"
 #include <memory>
 #include <string>
 
-namespace SpaceInvaders
+namespace LunarRescue
 {
     // the shift register lives on ports 2-4 and needs to persist between the
     // read and write hooks below, so it's captured by shared_ptr rather than
@@ -16,16 +17,21 @@ namespace SpaceInvaders
     MachineConfig buildConfig()
     {
         MachineConfig config;
-        
-        config.name = "Space Invaders";
 
-        config.roms = {
-            {"./roms/invaders/invaders.h", 0x0000},
-            {"./roms/invaders/invaders.g", 0x0800},
-            {"./roms/invaders/invaders.f", 0x1000},
-            {"./roms/invaders/invaders.e", 0x1800},
+        config.name = "LunarRescue";
+
+        config.roms =
+        {
+            {"./roms/lrescue/lrescue.1", 0x0000},
+            {"./roms/lrescue/lrescue.2", 0x0800},
+            {"./roms/lrescue/lrescue.3", 0x1000},
+            {"./roms/lrescue/lrescue.4", 0x1800},
+
+            // lunar rescue maps its extra 4kb of code up at 0x4000
+            {"./roms/lrescue/lrescue.5", 0x4000},
+            {"./roms/lrescue/lrescue.6", 0x4800}
         };
-        
+
         config.writableFrom = 0x2000;
 
         config.screenWidth  = 224;
@@ -35,13 +41,15 @@ namespace SpaceInvaders
 
         config.cyclesPerSecond = 2'000'000;
         config.framesPerSecond = 60;
-        
-        config.interrupts = {
+
+        config.interrupts =
+        {
             {16'666, 0x08}, // mid-screen (rst 1)
             {33'332, 0x10}, // end-of-screen (rst 2)
         };
 
-        config.keyBindings = {
+        config.keyBindings =
+        {
             {SDLK_c,      1, 0b0000'0001}, // insert coin
             {SDLK_RETURN, 1, 0b0000'0100}, // player 1 start
             {SDLK_SPACE,  1, 0b0001'0000}, // player 1 shoot
@@ -60,10 +68,14 @@ namespace SpaceInvaders
         {
             switch (port)
             {
-                case 1:  return bus.ports[1];
-                case 2:  return bus.ports[2];
-                case 3:  return (hw->shiftRegister >> (8 - hw->shiftOffset)) & 0xFF;
-                default: return 0;
+                case 1:
+                    return bus.ports[1];
+                case 2:
+                    return bus.ports[2];
+                case 3:
+                    return (hw->shiftRegister >> (8 - hw->shiftOffset)) & 0xFF;
+                default:
+                    return 0;
             }
         };
 
@@ -71,13 +83,13 @@ namespace SpaceInvaders
         {
             switch (port)
             {
-                case 2: 
-                    hw->shiftOffset = val & 0x07; 
+                case 2:
+                    hw->shiftOffset = val & 0x07;
                     break;
-                case 4: 
-                    hw->shiftRegister = (hw->shiftRegister >> 8) | (static_cast<uint16_t>(val) << 8); 
+                case 4:
+                    hw->shiftRegister = (hw->shiftRegister >> 8) | (static_cast<uint16_t>(val) << 8);
                     break;
-                default: 
+                default:
                     break;
             }
         };

@@ -21,9 +21,9 @@ FetchContent_MakeAvailable(SDL2)
 # ───────────────────────────────
 # Core Emulator Executable
 # ───────────────────────────────
-add_executable(intel-8080-emulator-cpp
-src/CPU.cpp src/CPU.h src/Display.cpp src/Display.h src/Emulator.cpp src/Emulator.h src/MachineBus.h src/MachineConfig.h src/main.cpp src/SpaceInvaders.h src/LRescue.h
-)
+# grab every cpp file inside the src folder and its subfolders.
+file(GLOB_RECURSE sources CONFIGURE_DEPENDS "src/*.cpp")
+add_executable(intel-8080-emulator-cpp ${sources})
 
 target_include_directories(intel-8080-emulator-cpp PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
