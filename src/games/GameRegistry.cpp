@@ -7,8 +7,8 @@ std::vector<GameEntry> getMenuEntries()
 {
     return
     {
-        { "Space Invaders",  EntryKind::Game,       SpaceInvaders::buildConfig, nullptr },
-        { "Lunar Rescue",    EntryKind::Game,       LunarRescue::buildConfig,   nullptr },
-        { "CPU Diagnostics", EntryKind::Diagnostic, nullptr,                    runCpuDiagnostics },
+        { "Space Invaders",  GameEntry::BuildConfig{ SpaceInvaders::buildConfig } },
+        { "Lunar Rescue",    GameEntry::BuildConfig{ LunarRescue::buildConfig   } },
+        { "CPU Diagnostics", GameEntry::RunAction{ runCpuDiagnostics }          },
     };
 }

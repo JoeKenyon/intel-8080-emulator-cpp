@@ -3,6 +3,7 @@
 #include "CpuDiagnostics.h"
 
 #include <SDL2/SDL.h>
+#include <algorithm>
 #include <array>
 #include <filesystem>
 #include <fstream>
@@ -52,40 +53,75 @@ void runCpuDiagnostics()
         return;
     }
 
-    SDL_Window* window = SDL_CreateWindow("CPU Diagnostics", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 640, 480, SDL_WINDOW_SHOWN);
+    const int windowWidth  = 640;
+    const int windowHeight = 380;
+    const int lineHeight   = 10; // 8px glyph + 2px padding
+    const int marginTop    = 10;
+    const int marginLeft   = 10;
+
+    // bottom row is reserved as a status bar, not part of the scrollable log
+    const int linesPerScreen = (windowHeight - marginTop - lineHeight) / lineHeight;
+
+    SDL_Window* window = SDL_CreateWindow("CPU Diagnostics", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, windowWidth, windowHeight, SDL_WINDOW_SHOWN);
     SDL_Renderer* renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
 
-    // holds the terminal output
+    // holds the full terminal output, nothing is ever deleted from this,
+    // scrolling is just choosing which slice of it to draw
     std::vector<std::string> consoleLines;
     consoleLines.push_back("");
 
-    // flag to track if the text buffer was modified
     bool screenNeedsUpdate = true;
+    int  scrollOffset = 0;    // index of first visible line
+    bool autoFollow    = true; // keep the view pinned to the newest line
+
+    auto maxScrollOffset = [&]() -> int
+    {
+        return std::max(0, static_cast<int>(consoleLines.size()) - linesPerScreen);
+    };
+
+    auto scrollToBottom = [&]()
+    {
+        scrollOffset = maxScrollOffset();
+    };
 
     auto printChar = [&](char c)
     {
-        // something new arrived, queue a redraw
         screenNeedsUpdate = true;
 
         if (c == '\n' || c == '\r')
         {
-            // skip empty redundant carriage returns
-            if (c == '\r')
-            {
-                return;
-            }
+            if (c == '\r') return; // skip redundant carriage returns
             consoleLines.push_back("");
-
-            // keep a rolling buffer of 44 lines to fit a 640x480 window at 1x scale
-            // this creates an automatic scrolling effect
-            if (consoleLines.size() > 44)
-            {
-                consoleLines.erase(consoleLines.begin());
-            }
         }
         else
         {
             consoleLines.back() += c;
+        }
+
+        if (autoFollow) scrollToBottom();
+    };
+
+    auto drawText = [&](const std::string& text, int x, int y, SDL_Color color)
+    {
+        SDL_SetRenderDrawColor(renderer, color.r, color.g, color.b, color.a);
+        int penX = x;
+        for (unsigned char c : text)
+        {
+            if (c > 127) c = '?';
+            const unsigned char* glyph = font8x8_basic[c];
+
+            for (int row = 0; row < 8; row++)
+            {
+                for (int col = 0; col < 8; col++)
+                {
+                    if ((glyph[row] >> col) & 0x01)
+                    {
+                        SDL_Rect px{penX + col, y + row, 1, 1};
+                        SDL_RenderFillRect(renderer, &px);
+                    }
+                }
+            }
+            penX += 8;
         }
     };
 
@@ -93,36 +129,56 @@ void runCpuDiagnostics()
     {
         SDL_SetRenderDrawColor(renderer, 0x10, 0x10, 0x18, 0xFF);
         SDL_RenderClear(renderer);
-        SDL_SetRenderDrawColor(renderer, 0x30, 0xFF, 0x30, 0xFF);
 
-        int y = 10;
-        for (const auto& line : consoleLines)
+        int offset = std::min(scrollOffset, maxScrollOffset());
+        int end    = std::min(static_cast<int>(consoleLines.size()), offset + linesPerScreen);
+
+        int y = marginTop;
+        for (int i = offset; i < end; i++)
         {
-            int x = 10;
-            for (unsigned char c : line)
-            {
-                if (c > 127) c = '?';
-                const unsigned char* glyph = font8x8_basic[c];
-
-                for (int row = 0; row < 8; row++)
-                {
-                    for (int col = 0; col < 8; col++)
-                    {
-                        if ((glyph[row] >> col) & 0x01)
-                        {
-                            // render at 1x scale instead of 2x
-                            SDL_Rect px{x + col, y + row, 1, 1};
-                            SDL_RenderFillRect(renderer, &px);
-                        }
-                    }
-                }
-                // move forward 8 pixels per character
-                x += 8;
-            }
-            // move down 10 pixels per line (8 for font + 2 padding)
-            y += 10;
+            drawText(consoleLines[i], marginLeft, y, SDL_Color{0x30, 0xFF, 0x30, 0xFF});
+            y += lineHeight;
         }
+
+        // status bar, always visible regardless of scroll position
+        std::string status = autoFollow
+            ? "-- LIVE (UP/PGUP TO SCROLL, ESC TO QUIT) --"
+            : "-- PAUSED (DOWN/PGDN TO FOLLOW AGAIN, ESC TO QUIT) --";
+        drawText(status, marginLeft, windowHeight - lineHeight, SDL_Color{0x70, 0x70, 0x70, 0xFF});
+
         SDL_RenderPresent(renderer);
+    };
+
+    auto handleScrollKey = [&](SDL_Keycode key) -> bool // returns true if it quit
+    {
+        switch (key)
+        {
+            case SDLK_ESCAPE:
+                return true;
+            case SDLK_UP:
+                scrollOffset = std::max(0, scrollOffset - 1);
+                autoFollow = false;
+                screenNeedsUpdate = true;
+                break;
+            case SDLK_PAGEUP:
+                scrollOffset = std::max(0, scrollOffset - linesPerScreen);
+                autoFollow = false;
+                screenNeedsUpdate = true;
+                break;
+            case SDLK_DOWN:
+                scrollOffset = std::min(maxScrollOffset(), scrollOffset + 1);
+                autoFollow = (scrollOffset >= maxScrollOffset());
+                screenNeedsUpdate = true;
+                break;
+            case SDLK_PAGEDOWN:
+                scrollOffset = std::min(maxScrollOffset(), scrollOffset + linesPerScreen);
+                autoFollow = (scrollOffset >= maxScrollOffset());
+                screenNeedsUpdate = true;
+                break;
+            default:
+                break;
+        }
+        return false;
     };
 
     TestBus bus;
@@ -169,7 +225,6 @@ void runCpuDiagnostics()
 
         std::string fileName = std::filesystem::path(romPaths[i]).filename().string();
 
-        // push a system message so we know what's running
         std::string header = std::string("--- RUNNING ") + fileName + " ---";
         for (char c : header) printChar(c);
         printChar('\n');
@@ -198,11 +253,8 @@ void runCpuDiagnostics()
 
         testFinished = false;
 
-        // main testing loop
         while (!testFinished && !userQuit)
         {
-            // run a batch of instructions so we aren't completely
-            // stalling the ui thread while chewing through huge tests
             for (int k = 0; k < 50000 && !testFinished; k++)
             {
                 cpu.executeInstruction();
@@ -215,13 +267,12 @@ void runCpuDiagnostics()
                 {
                     userQuit = true;
                 }
-                else if (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_ESCAPE)
+                else if (event.type == SDL_KEYDOWN)
                 {
-                    userQuit = true;
+                    if (handleScrollKey(event.key.keysym.sym)) userQuit = true;
                 }
             }
 
-            // only push pixels to the gpu if the text actually changed
             if (screenNeedsUpdate)
             {
                 renderScreen();
@@ -229,20 +280,24 @@ void runCpuDiagnostics()
             }
         }
 
-        // drop a couple of blank lines to visually separate this test from the next
         printChar('\n');
         printChar('\n');
     }
 
-    // wait for them to dismiss the screen before tearing down
+    // stay open so the person can read/scroll through everything at their
+    // own pace once the tests are done, instead of the window vanishing
     while (!userQuit)
     {
         SDL_Event event;
         while (SDL_PollEvent(&event))
         {
-            if (event.type == SDL_QUIT || (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_ESCAPE))
+            if (event.type == SDL_QUIT)
             {
                 userQuit = true;
+            }
+            else if (event.type == SDL_KEYDOWN)
+            {
+                if (handleScrollKey(event.key.keysym.sym)) userQuit = true;
             }
         }
         renderScreen();

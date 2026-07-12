@@ -5,7 +5,9 @@ the arcade board Taito developed in 1977, most famous for Space Invaders and
 also used by later derivatives like Lunar Rescue. SDL2 handles video and
 input.
 
-<img src="space_invaders.png" alt="running space invaders" width="350"/>
+<img src="main_menu.png" alt="main menu" width="200"/>
+<img src="space_invaders.png" alt="running space invaders" width="179"/>
+<img src="lunar_rescue.png" alt="running lunar rescue" width="179"/>
 
 This isn't a single game emulator. The core (CPU, bus, display) is shared 
 across the whole board family, and each game gets added as a data-driven 
@@ -34,6 +36,8 @@ without recompiling.
   test ROMs (TST8080, CPUTEST, 8080PRE, 8080EXM) directly into a custom 
   SDL terminal window.
 - Arcade boot menu (`MenuScreen`) to seamlessly switch between games.
+
+
 
 ## Build
 
